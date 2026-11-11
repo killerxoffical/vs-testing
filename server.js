@@ -81,29 +81,31 @@ const GAMES_DATABASE = {
     }
 };
 
-// মাস্টার টোকেন দিয়ে গেম-স্পেসিফিক টোকেন তৈরি করার মেথড (Android GoogleAuth)
+// মাস্টার টোকেন দিয়ে গেম-স্পেসিফিক টোকেন তৈরি করার মেথড (Android GoogleAuth / gpsoauth)
 async function getGameScopedToken(email, masterToken, appPackage, clientSig = '38918a453d07199354f8b19af05ec6562ced5788') {
     const url = 'https://android.clients.google.com/auth';
     const params = new URLSearchParams({
         accountType: 'HOSTED_OR_GOOGLE',
         Email: email || 'user@gmail.com',
+        has_permission: '1',
         EncryptedPasswd: masterToken,
-        Token: masterToken,
         service: 'oauth2:https://www.googleapis.com/auth/games',
+        source: 'android',
+        androidId: '0123456789abcdef',
         app: appPackage,
         client_sig: clientSig,
-        callerPkg: 'com.google.android.gms',
-        callerSig: '38918a453d07199354f8b19af05ec6562ced5788',
         device_country: 'us',
+        operatorCountry: 'us',
         lang: 'en',
-        sdk_version: '33'
+        sdk_version: '17',
+        google_play_services_version: '240913000'
     });
 
     try {
         const res = await axios.post(url, params.toString(), {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
-                'User-Agent': 'GoogleAuth/1.4 (Linux; U; Android 13; Pixel 7 Build/TQ3A.230805.001)'
+                'User-Agent': 'GoogleAuth/1.4'
             }
         });
 
@@ -117,6 +119,56 @@ async function getGameScopedToken(email, masterToken, appPackage, clientSig = '3
 
         if (dict['Auth']) {
             return { success: true, token: dict['Auth'] };
+        } else {
+            return { success: false, error: dict['Error'] || 'Token exchange failed' };
+        }
+    } catch (err) {
+        const errText = err.response?.data || err.message;
+        return { success: false, error: errText };
+    }
+}
+
+// EmbeddedSetup থেকে পাওয়া oauth_token দিয়ে মাস্টার টোকেন পাওয়ার মেথড
+async function exchangeWebTokenForMasterToken(email, oauthToken) {
+    const url = 'https://android.clients.google.com/auth';
+    const params = new URLSearchParams({
+        accountType: 'HOSTED_OR_GOOGLE',
+        Email: email || 'user@gmail.com',
+        has_permission: '1',
+        add_account: '1',
+        ACCESS_TOKEN: '1',
+        Token: oauthToken,
+        service: 'ac2dm',
+        source: 'android',
+        androidId: '0123456789abcdef',
+        device_country: 'us',
+        operatorCountry: 'us',
+        lang: 'en',
+        sdk_version: '17',
+        google_play_services_version: '240913000',
+        client_sig: '38918a453d07199354f8b19af05ec6562ced5788',
+        callerSig: '38918a453d07199354f8b19af05ec6562ced5788',
+        droidguard_results: 'dummy123'
+    });
+
+    try {
+        const res = await axios.post(url, params.toString(), {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': 'GoogleAuth/1.4'
+            }
+        });
+
+        const dict = {};
+        for (const line of res.data.split('\n')) {
+            if (line.includes('=')) {
+                const [k, v] = line.split('=');
+                dict[k.trim()] = v.trim();
+            }
+        }
+
+        if (dict['Token']) {
+            return { success: true, masterToken: dict['Token'] };
         } else {
             return { success: false, error: dict['Error'] || 'Token exchange failed' };
         }
@@ -502,8 +554,8 @@ bot.on('message', async (msg) => {
         }
     }
 
-    // ২.১ মাস্টার টোকেন (aas_et/...) পেস্ট করা হলে
-    const masterMatch = rawText.match(/aas_et\/[a-zA-Z0-9_\-]+/);
+    // ২.১ মাস্টার টোকেন (aas_et/... বা oauth2rt_1/...) পেস্ট করা হলে
+    const masterMatch = rawText.match(/(aas_et\/[a-zA-Z0-9_\-]+|oauth2rt_1\/[a-zA-Z0-9_\-]+)/);
     if (masterMatch) {
         const mToken = masterMatch[0];
         userMasterTokens[chatId] = mToken;
@@ -516,6 +568,29 @@ bot.on('message', async (msg) => {
             `👇 এখন নিচে থেকে গেম সিলেক্ট করে আসল কোয়েস্ট আনলক করুন:`,
             getMainMenu()
         );
+    }
+
+    // ২.২ EmbeddedSetup oauth_token পেস্ট করা হলে
+    const oauthTokenMatch = rawText.match(/oauth_token=([a-zA-Z0-9_\-]+)/) || (rawText.startsWith('oauth_token') ? rawText.split('=')[1]?.trim() : null);
+    if (oauthTokenMatch) {
+        const rawOauth = typeof oauthTokenMatch === 'string' ? oauthTokenMatch : oauthTokenMatch[1];
+        const waitMsg = await bot.sendMessage(chatId, '⏳ Google EmbeddedSetup টোকেন মাস্টার টোকেনে কনভার্ট করা হচ্ছে...');
+        const ex = await exchangeWebTokenForMasterToken(userEmails[chatId], rawOauth);
+        if (ex.success) {
+            userMasterTokens[chatId] = ex.masterToken;
+            try { await bot.deleteMessage(chatId, waitMsg.message_id); } catch(e) {}
+            return bot.sendMessage(
+                chatId,
+                `✅ **PP MOD: Google Master Token সফলভাবে তৈরি ও কানেক্ট হয়েছে!**\n\n` +
+                `📱 **মোবাইল ক্লায়েন্ট স্ট্যাটাস:** Connected\n` +
+                `🎯 **গেম অথরাইজেশন:** Ready for Gossip Harbor ও অন্যান্য সকল গেম!\n\n` +
+                `👇 এখন নিচে থেকে গেম কোয়েস্ট আনলক করুন:`,
+                getMainMenu()
+            );
+        } else {
+            try { await bot.deleteMessage(chatId, waitMsg.message_id); } catch(e) {}
+            return bot.sendMessage(chatId, `❌ **টোকেন কনভার্ট ব্যর্থ:** ${ex.error}\nঅনুগ্রহ করে আবার চেষ্টা করুন।`);
+        }
     }
 
     // ৩. কাস্টম Achievement ID (CgkI...) পাঠানো হলে (ইউজার মেসেজে এক বা একাধিক CgkI আইডি দিলে)
@@ -587,6 +662,7 @@ bot.on('message', async (msg) => {
             await bot.deleteMessage(chatId, statusMsg.message_id);
         } catch (e) {}
 
+        const has403 = results.some(r => r.includes('403'));
         const summaryText = 
             `📊 **PP MOD আনলক রিপোর্ট:**\n\n` +
             `🎮 **গেম:** ${currentGame}\n` +
@@ -596,11 +672,20 @@ bot.on('message', async (msg) => {
             (failedCount > 0 ? `❌ ব্যর্থ: \`${failedCount}\`টি\n\n` : `\n`) +
             `📋 **প্রতিটি আইডির আসল গুগল রেসপন্স:**\n` +
             results.join('\n') + `\n\n` +
-            `📱 আপনার Google Play Games বা Play Points অ্যাপটি ওপেন করে রিফ্রেশ করুন!`;
+            (has403 
+                ? `⚠️ **গুগলের ৪০৩ এরর কেন আসলো?**\nআপনি সাধারণ OAuth Playground-এর টোকেন (\`407408718192\`) ব্যবহার করেছেন। গুগলের অফিশিয়াল নিয়ম অনুযায়ী সাধারণ টোকেন দিয়ে Gossip Harbor বা অন্য কোনো গেমের ভেতরের অ্যাচিভমেন্ট আনলক করার অনুমতি নেই।\n\n👉 আসল আনলক করতে আপনার **Android Master Token (\`aas_et/...\`)** বা গেমের নিজস্ব টোকেন প্রয়োজন।` 
+                : `📱 আপনার Google Play Games বা Play Points অ্যাপটি ওপেন করে রিফ্রেশ করুন!`);
+
+        const menuOptions = JSON.parse(JSON.stringify(getMainMenu()));
+        if (has403) {
+            menuOptions.reply_markup.inline_keyboard.unshift(
+                [{ text: "🔑 ৪০৩ এরর সমাধানের নিয়ম (গাইড)", callback_data: "btn_fix_403" }]
+            );
+        }
 
         return bot.sendMessage(chatId, summaryText, {
             parse_mode: 'Markdown',
-            ...getMainMenu()
+            ...menuOptions
         });
     }
 
@@ -837,6 +922,30 @@ bot.on('callback_query', async (query) => {
         });
     }
 
+    // ৩.১ ৪০৩ এরর সমাধানের বিস্তারিত গাইড
+    else if (data === 'btn_fix_403') {
+        await bot.answerCallbackQuery(query.id);
+        const guideText = 
+            `💡 **গুগল ৪০৩ (Cross-Application) এরর কেন আসে এবং কীভাবে সমাধান করবেন?**\n\n` +
+            `📌 **আসল কারণ:**\n` +
+            `গুগল প্লে স্টোরের প্রতিটি গেমের একটি নির্দিষ্ট প্রজেক্ট আইডি থাকে (যেমন Gossip Harbor-এর \`280613373405\`)।\n` +
+            `OAuth Playground দিয়ে টোকেন নিলে সেটির আইডি হয় \`407408718192\`। গুগল সিকিউরিটি পলিসি অনুযায়ী এক অ্যাপের সাধারণ টোকেন দিয়ে অন্য কোনো গেমের কুয়েস্ট আনলক করার অনুমতি দেয় না।\n\n` +
+            `🔥 **আসল আনলক করার ২টি কার্যকর সমাধান:**\n\n` +
+            `১️⃣ **Android Master Token (aas_et/...) ইনপুট দিন:**\n` +
+            `টার্মাক্স বা গুগল অথ থেকে পাওয়া আপনার ডিভাইসের \`aas_et/...\` মাস্টার টোকেনটি এই চ্যাটে পাঠিয়ে দিন। বট স্বয়ংক্রিয়ভাবে গেমের অফিশিয়াল এক্সেস টোকেন তৈরি করে কোনো এরর ছাড়াই আনলক করে দেবে।\n\n` +
+            `২️⃣ **Google EmbeddedSetup টোকেন:**\n` +
+            `ব্রাউজারে \`https://accounts.google.com/EmbeddedSetup\` লিঙ্কে সাইন ইন করে পাওয়া \`oauth_token\` টি এখানে পাঠালেও বট নিজে মাস্টার টোকেন বানিয়ে সব গেমের কুয়েস্ট আনলক করে দেবে।`;
+
+        return bot.sendMessage(chatId, guideText, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "🔙 প্রধান মেনু", callback_data: "btn_main_menu" }]
+                ]
+            }
+        });
+    }
+
     // ৪. সাপ্তাহিক প্রাইজ বক্স বাটন (@PlayQuestHelperBot /weeklyprize)
     else if (data === 'btn_weeklyprize') {
         await bot.answerCallbackQuery(query.id, { text: 'সাপ্তাহিক প্রাইজ বক্স ক্লেম হচ্ছে...' });
@@ -946,6 +1055,7 @@ bot.on('callback_query', async (query) => {
             }
         }
 
+        const has403 = results.some(r => r.includes('403'));
         const reportText = 
             `📊 <b>PP MOD: [${gameName}] আসল রিপোর্ট:</b>\n\n` +
             `🎯 মোট কোয়েস্ট: <b>${achList.length}</b>টি\n` +
@@ -956,7 +1066,14 @@ bot.on('callback_query', async (query) => {
                 ? `⚠️ <i>নোট: গুগলের ৪০৩ এরর ঠেকাতে গেমের স্পেসিফিক Master Token (aas_et/...) প্রয়োজন।</i>` 
                 : `📱 <b>আপনার Google Play Games অ্যাপ রিফ্রেশ করে দেখুন, রিয়েল পয়েন্ট ও কোয়েস্ট যোগ হয়েছে!</b>`);
 
-        await safeEditMessage(chatId, msg.message_id, reportText, getMainMenu());
+        const menuOptions = JSON.parse(JSON.stringify(getMainMenu()));
+        if (has403 || successCount === 0) {
+            menuOptions.reply_markup.inline_keyboard.unshift(
+                [{ text: "🔑 ৪০৩ এরর সমাধানের নিয়ম (গাইড)", callback_data: "btn_fix_403" }]
+            );
+        }
+
+        await safeEditMessage(chatId, msg.message_id, reportText, menuOptions);
     }
 
     // ৮. নির্দিষ্ট CgkI আইডি ইনপুট মোড
