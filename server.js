@@ -3,20 +3,22 @@ const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 
 // --- কনফিগারেশন ---
-const BOT_TOKEN = process.env.BOT_TOKEN || '1022873197627-h0pa915p9gt3mh19lemh0lo1nclojarn.apps.googleusercontent.com';
+const BOT_TOKEN = process.env.BOT_TOKEN || '8653938577:AAE1g-TDAedxbpGvszb0zRyVa04560mba0c';
 const PORT = process.env.PORT || 3000;
 const RENDER_URL = 'https://ppmod-quest-unlock.onrender.com';
 
-// গুগল ক্লাউড ওথ ক্রেডেনশিয়াল (ডিফল্ট ক্লায়েন্ট)
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '407408718192.apps.googleusercontent.com';
+// আপনার তৈরি করা নিজস্ব অফিসিয়াল Google Client ID
+const CLIENT_ID = '1022873197627-h0pa915p9gt3mh19lemh0lo1nclojarn.apps.googleusercontent.com';
 const REDIRECT_URI = `${RENDER_URL}/auth/callback`;
 
-// ১. এক্সপ্রেস সার্ভার ও ওয়েব ওথ (Web OAuth) রিডাইরেক্ট
+// ১. এক্সপ্রেস সার্ভার এবং টেলিগ্রাম বট শুরু
 const app = express();
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
 // ইউজার টোকেন স্টোর
 const userTokens = {};
+
+console.log('🔥 PP MOD Web OAuth Bot Started with Official Client ID!');
 
 // প্রধান বাটন মেনু
 function getMainMenu() {
@@ -36,7 +38,7 @@ function getMainMenu() {
 // হোম রাউট
 app.get('/', (req, res) => res.send('🔥 PP MOD Web OAuth Engine is Running 24/7 on Render!'));
 
-// গুগলে লগইন রিডাইরেক্ট রাউট
+// গুগলে ১-ক্লিক লগইন রিডাইরেক্ট
 app.get('/auth/google', (req, res) => {
     const chatId = req.query.chat_id;
     if (!chatId) return res.send('Error: Chat ID missing.');
@@ -51,28 +53,55 @@ app.get('/auth/google', (req, res) => {
     res.redirect(googleAuthUrl);
 });
 
-// গুগল লগইন শেষ হলে ইউজারকে ফেরত আনার রাউট
+// গুগল লগইন সফল হলে কলব্যাক পেজ
 app.get('/auth/callback', (req, res) => {
-    // ব্রাউজারের হ্যাশ টোকেন রিড করার ফ্রন্টএন্ড স্ক্রিপ্ট
     res.send(`
+        <!DOCTYPE html>
         <html>
-        <head><title>PP MOD - Authentication</title></head>
-        <body style="font-family: Arial; text-align: center; padding-top: 50px; background: #121212; color: white;">
-            <h2>⏳ ভেরিফিকেশন সম্পন্ন হচ্ছে...</h2>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>PP MOD - Authentication</title>
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0f172a; color: white; text-align: center; padding: 40px 20px; }
+                .card { background: #1e293b; border-radius: 16px; padding: 30px; max-width: 400px; margin: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+                h2 { color: #38bdf8; margin-bottom: 10px; }
+                p { color: #94a3b8; font-size: 15px; }
+                .spinner { border: 4px solid rgba(255,255,255,0.1); width: 40px; height: 40px; border-radius: 50%; border-left-color: #38bdf8; animation: spin 1s linear infinite; margin: 20px auto; }
+                @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            </style>
+        </head>
+        <body>
+            <div class="card" id="box">
+                <div class="spinner" id="sp"></div>
+                <h2 id="title">⏳ ভেরিফিকেশন সম্পন্ন হচ্ছে...</h2>
+                <p id="desc">অনুগ্রহ করে কয়েক সেকেন্ড অপেক্ষা করুন।</p>
+            </div>
             <script>
+                // গুগলের হ্যাশ ফ্র্যাগমেন্ট থেকে টোকেন এবং স্টেট রিড করা
                 const hash = window.location.hash.substring(1);
-                const params = new URLSearchParams(hash);
-                const token = params.get('access_token');
-                const stateParams = new URLSearchParams(window.location.search);
-                const state = stateParams.get('state');
+                const hashParams = new URLSearchParams(hash);
+                const searchParams = new URLSearchParams(window.location.search);
+                
+                const token = hashParams.get('access_token') || searchParams.get('access_token');
+                const state = hashParams.get('state') || searchParams.get('state');
 
                 if (token && state) {
                     fetch('/api/save-token?chat_id=' + state + '&token=' + token)
-                        .then(() => {
-                            document.body.innerHTML = '<h2>✅ গুগল লগইন সফল হয়েছে!</h2><p>আপনি এই পেজটি কেটে দিয়ে টেলিগ্রামে ফিরে যান।</p>';
+                        .then(r => r.json())
+                        .then(d => {
+                            document.getElementById('sp').style.display = 'none';
+                            document.getElementById('title').innerHTML = '✅ লগইন সফল হয়েছে!';
+                            document.getElementById('title').style.color = '#4ade80';
+                            document.getElementById('desc').innerHTML = '🎉 আপনার গুগল অ্যাকাউন্ট কানেক্ট হয়ে গেছে। <b>টেলিগ্রাম অ্যাপে ফিরে যান!</b>';
+                        })
+                        .catch(e => {
+                            document.getElementById('sp').style.display = 'none';
+                            document.getElementById('title').innerHTML = '❌ এরর হয়েছে!';
                         });
                 } else {
-                    document.body.innerHTML = '<h2>❌ অথেনটিকেশন ব্যর্থ হয়েছে। পুনরায় চেষ্টা করুন।</h2>';
+                    document.getElementById('sp').style.display = 'none';
+                    document.getElementById('title').innerHTML = '❌ অনুমোদন পাওয়া যায়নি!';
+                    document.getElementById('desc').innerHTML = 'দয়া করে আবার বটে গিয়ে চেষ্টা করুন।';
                 }
             </script>
         </body>
@@ -86,11 +115,12 @@ app.get('/api/save-token', async (req, res) => {
     if (chat_id && token) {
         userTokens[chat_id] = token;
 
-        // টেলিগ্রামে সাথে সাথে মেনু বাটন পাঠিয়ে দেওয়া
+        // টেলিগ্রামে অটোমেটিক গেম বাটন মেনু পাঠানো
         await bot.sendMessage(
             chat_id,
             `🎉 **অভিনন্দন! আপনার গুগল অ্যাকাউন্ট সফলভাবে কানেক্ট হয়েছে!**\n\n` +
-            `👇 **নিচের বাটন থেকে আপনার পছন্দমতো গেম আনলক করুন:**`,
+            `🌐 **Status:** Official Google Verified\n\n` +
+            `👇 **নিচের বাটন থেকে আপনার কাজ সিলেক্ট করুন:**`,
             { parse_mode: 'Markdown', ...getMainMenu() }
         );
         res.json({ success: true });
@@ -106,7 +136,7 @@ bot.onText(/\/start/, (msg) => {
 
     const welcomeText = `👋 হ্যালো **${msg.from.first_name || 'User'}**!\n\n` +
         `🔥 **PP MOD Auto Quest & Achievement Unlocker**-এ স্বাগতম!\n\n` +
-        `কোনো পাসওয়ার্ড বা কোড টাইপ করার দরকার নেই। নিচের **"Connect with Google"** বাটনে চাপ দিয়ে আপনার জিমেইল অ্যাকাউন্টটি কানেক্ট করুন:`;
+        `কোনো পাসওয়ার্ড বা কোড টাইপ করার দরকার নেই। নিচের **"Connect with Google"** বাটনে চাপ দিয়ে আপনার জিমেইল অ্যাকাউন্টটি ১-ক্লিকে কানেক্ট করুন:`;
 
     bot.sendMessage(chatId, welcomeText, {
         parse_mode: 'Markdown',
@@ -145,7 +175,7 @@ bot.on('callback_query', async (query) => {
 
             bot.sendMessage(chatId, profileMsg, { parse_mode: 'Markdown', ...getMainMenu() });
         } catch {
-            bot.sendMessage(chatId, 'ℹ️ প্রোফাইল ডাটা রিড করা যায়নি।', getMainMenu());
+            bot.sendMessage(chatId, 'ℹ️ প্রোফাইল ডাটা রিড করা যায়নি। নিশ্চিত করুন অ্যাকাউন্টে Gamer ID সেট করা আছে।', getMainMenu());
         }
     } else if (data === 'btn_gossip') {
         bot.answerCallbackQuery(query.id, { text: 'Gossip Harbor আনলক শুরু...' });
@@ -168,7 +198,7 @@ bot.on('callback_query', async (query) => {
                 ...getMainMenu()
             });
         } catch {
-            bot.editMessageText('❌ আনলক ব্যর্থ হয়েছে (গুগল প্লে রেস্ট্রিকশন)।', {
+            bot.editMessageText('❌ আনলক করা যায়নি।', {
                 chat_id: chatId,
                 message_id: waitMsg.message_id,
                 ...getMainMenu()
@@ -187,4 +217,4 @@ bot.on('callback_query', async (query) => {
     }
 });
 
-app.listen(PORT, () => console.log(`[+] Server listening on port ${PORT}`));
+app.listen(PORT, () => console.log(`[+] Server running on port ${PORT}`));
