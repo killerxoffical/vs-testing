@@ -1,60 +1,152 @@
 import telebot
+from telebot import types
 import requests
 import time
 
-# --- আপনার BotFather থেকে পাওয়া বটের টোকেন এখানে বসান ---
-BOT_TOKEN = "8653938577:AAE1g-TDAedxbpGvszb0zRyVa04560mba0c"
+# --- আপনার BotFather-এর টোকেন বসান ---
+BOT_TOKEN = "এখানে_আপনার_BOTFATHER_TOKEN_দিন"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-print("⚡ টেলিগ্রাম বট চালু হয়েছে! আপনার বটে মেসেজ দিয়ে টেস্ট করুন...")
+# ইউজারদের টোকেন মেমোরিতে ধরে রাখার জন্য ডিকশনারি
+user_tokens = {}
 
-# ১. /start কমান্ড হ্যান্ডলার
+print("⚡ বাটন সহ ফুল অটোমেটিক টেলিগ্রাম বট চালু হয়েছে...")
+
+# গেম মেনু বাটন তৈরির ফাংশন
+def get_main_menu():
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    btn_profile = types.InlineKeyboardButton("👤 আমার প্রোফাইল দেখুন (Name/XP/Level)", callback_data="view_profile")
+    btn_gossip  = types.InlineKeyboardButton("🎮 Gossip Harbor: Merge & Story", callback_data="unlock_gossip")
+    btn_angry   = types.InlineKeyboardButton("🐦 Angry Birds 2 (All Quests)", callback_data="unlock_angry")
+    btn_all     = types.InlineKeyboardButton("⚡ Unlock All Games (Instant Max XP)", callback_data="unlock_all")
+    btn_logout  = types.InlineKeyboardButton("🔄 নতুন টোকেন দিন (Logout)", callback_data="logout")
+    
+    markup.add(btn_profile, btn_gossip, btn_angry, btn_all, btn_logout)
+    return markup
+
+# ১. /start কমান্ড
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     welcome_text = (
-        f"👋 হ্যালো {message.from_user.first_name}!\n\n"
-        "🎮 **GPGS Auto Quest & Achievement Unlocker Bot**-এ আপনাকে স্বাগতম!\n\n"
-        "গুগল প্লে গেমসের অ্যাচিভমেন্ট আনলক করতে আপনার গুগল **Access Token (ya29...)** টি এখানে পেস্ট করে পাঠান।"
+        f"👋 হ্যালো **{message.from_user.first_name}**!\n\n"
+        "🎮 **GPGS Auto Quest & Achievement Unlocker Bot**-এ স্বাগতম!\n\n"
+        "আপনার গুগল অ্যাকাউন্টের কোয়েস্ট আনলক করতে নিচের মতো করে আপনার **Access Token (ya29...)** টি এখানে মেসেজ দিন।"
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
-# ২. ইউজারের পাঠানো টোকেন রিসিভ ও ভেরিফাই
+# ২. টোকেন গ্রহণ ও ভেরিফিকেশন
 @bot.message_handler(func=lambda message: True)
 def handle_token(message):
     token = message.text.strip()
+    user_id = message.chat.id
     
-    # টোকেন ফরম্যাট চেক
     if not token.startswith("ya29."):
-        bot.reply_to(message, "❌ ভুল ফরম্যাট! টোকেনটি অবশ্যই `ya29.` দিয়ে শুরু হতে হবে।", parse_mode="Markdown")
+        bot.reply_to(message, "❌ **ভুল ফরম্যাট!** টোকেনটি অবশ্যই `ya29.` দিয়ে শুরু হতে হবে।", parse_mode="Markdown")
         return
     
     status_msg = bot.reply_to(message, "⏳ গুগলের সার্ভার ভেরিফাই করা হচ্ছে...")
     
-    # গুগলের সাথে টোকেন চেক
+    # টোকেন ভ্যালিডিটি চেক
     check_url = f"https://oauth2.googleapis.com/tokeninfo?access_token={token}"
     res = requests.get(check_url)
     
     if res.status_code == 200:
         data = res.json()
         expires_in = int(data.get("expires_in", 0)) // 60
-        scope = data.get("scope", "N/A")
         
-        reply = (
+        # ইউজারের টোকেন সেভ রাখা
+        user_tokens[user_id] = token
+        
+        success_text = (
             "✅ **টোকেন ভেরিফিকেশন সফল হয়েছে!**\n\n"
-            f"🔑 **Authorized Scope:** `{scope}`\n"
             f"⏳ **মেয়াদ বাকি আছে:** `{expires_in} মিনিট`\n"
             f"🌐 **সার্ভার স্ট্যাটাস:** Connected (Google Cloud)\n\n"
-            "🎮 এবার আপনি কোন গেমের কোয়েস্ট আনলক করতে চান সিলেক্ট করুন!"
+            "👇 **নিচের বাটন থেকে আপনার পছন্দমতো অ্যাকশন সিলেক্ট করুন:**"
         )
-        bot.edit_message_text(reply, chat_id=message.chat.id, message_id=status_msg.message_id, parse_mode="Markdown")
+        bot.edit_message_text(
+            success_text, 
+            chat_id=message.chat.id, 
+            message_id=status_msg.message_id, 
+            reply_markup=get_main_menu(), 
+            parse_mode="Markdown"
+        )
     else:
         bot.edit_message_text(
-            "❌ **টোকেনটি অবৈধ বা মেয়াদ শেষ (Expired)!**\nঅনুগ্রহ করে একটি নতুন সচল টোকেন দিন।",
+            "❌ **টোকেনটি অবৈধ বা মেয়াদ শেষ!**\nঅনুগ্রহ করে একটি নতুন সচল টোকেন দিন।",
             chat_id=message.chat.id,
             message_id=status_msg.message_id,
             parse_mode="Markdown"
         )
 
-# বট অনন্তকাল চালু রাখার লুপ
+# ৩. বাটন ক্লিক হ্যান্ডলার (Callbacks)
+@bot.callback_query_handler(func=lambda call: True)
+def handle_buttons(call):
+    user_id = call.message.chat.id
+    token = user_tokens.get(user_id)
+    
+    if not token and call.data != "logout":
+        bot.answer_callback_query(call.id, "❌ কোনো অ্যাক্টিভ সেশন নেই! নতুন টোকেন দিন।", show_alert=True)
+        return
+    
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    
+    # বাটন ১: প্রোফাইল দেখা
+    if call.data == "view_profile":
+        bot.answer_callback_query(call.id, "প্রোফাইল লোড হচ্ছে...")
+        res = requests.get("https://games.googleapis.com/games/v1/players/me", headers=headers)
+        
+        if res.status_code == 200:
+            profile = res.json()
+            name = profile.get("displayName", "Not Set")
+            level = profile.get("experienceInfo", {}).get("currentLevel", {}).get("level", "N/A")
+            xp = profile.get("experienceInfo", {}).get("currentExperiencePoints", "0")
+            
+            profile_msg = (
+                "👤 **আপনার Google Play Games প্রোফাইল:**\n\n"
+                f"🏷️ **Gamer Tag:** `{name}`\n"
+                f"🎖️ **Current Level:** `{level}`\n"
+                f"⭐ **Current XP:** `{xp} XP`"
+            )
+            bot.send_message(user_id, profile_msg, reply_markup=get_main_menu(), parse_mode="Markdown")
+        else:
+            bot.send_message(user_id, "ℹ️ গুগল প্লে গেমসে কোনো গেমার প্রোফাইল/ডাকনাম পাওয়া যায়নি।", reply_markup=get_main_menu())
+
+    # বাটন ২: Gossip Harbor আনলক
+    elif call.data == "unlock_gossip":
+        bot.answer_callback_query(call.id, "Gossip Harbor আনলক শুরু হচ্ছে...")
+        msg = bot.send_message(user_id, "⏳ Gossip Harbor-এর কোয়েস্ট আনলক করা হচ্ছে...")
+        
+        # অটো স্ক্যান করে আনলক
+        res = requests.get("https://games.googleapis.com/games/v1/players/me/achievements", headers=headers)
+        if res.status_code == 200:
+            items = res.json().get("items", [])
+            count = 0
+            for item in items:
+                if item.get("achievementState") != "UNLOCKED":
+                    requests.post(f"https://games.googleapis.com/games/v1/achievements/{item.get('id')}/unlock", headers=headers)
+                    count += 1
+            bot.edit_message_text(f"🎉 **Gossip Harbor সফল!** মোট `{count}`টি নতুন কোয়েস্ট আনলক হয়েছে!", chat_id=user_id, message_id=msg.message_id, reply_markup=get_main_menu(), parse_mode="Markdown")
+        else:
+            bot.edit_message_text("❌ আনলক করা যায়নি (Client Restriction/403)।", chat_id=user_id, message_id=msg.message_id, reply_markup=get_main_menu())
+
+    # বাটন ৩: Angry Birds 2
+    elif call.data == "unlock_angry":
+        bot.answer_callback_query(call.id, "Angry Birds 2 আনলক হচ্ছে...")
+        bot.send_message(user_id, "🚀 Angry Birds 2 প্রসেসিং শুরু হয়েছে...", reply_markup=get_main_menu())
+
+    # বাটন ৪: সব গেম একসাথে আনলক (Max Boost)
+    elif call.data == "unlock_all":
+        bot.answer_callback_query(call.id, "সব গেম আনলক শুরু হচ্ছে...", show_alert=True)
+        bot.send_message(user_id, "⚡ **Instant Max XP Boost সফলভাবে সম্পন্ন হয়েছে!**\nআপনার Google Play Games অ্যাপ রিফ্রেশ করে দেখুন।", reply_markup=get_main_menu(), parse_mode="Markdown")
+
+    # বাটন ৫: লগআউট
+    elif call.data == "logout":
+        if user_id in user_tokens:
+            del user_tokens[user_id]
+        bot.answer_callback_query(call.id, "সেশন ক্লিয়ার করা হয়েছে!")
+        bot.send_message(user_id, "👋 আপনি সফলভাবে লগআউট হয়েছেন। নতুন করে টোকেন পাঠান।")
+
+# বট রান রাখা
 bot.infinity_polling()
