@@ -21,12 +21,13 @@ const ANDROID_PLAY_GAMES_HEADERS = {
 
 const app = express();
 
-// টেলিগ্রাম বট পোলিং কনফিগারেশন
+// টেলিগ্রাম বট পোলিং কনফিগারেশন (Render-এ পোলিং বন্ধ রাখা হয়েছে যাতে লোকাল পাইথন ইঞ্জিন কনফ্লিক্ট ছাড়া ১০০% পারফেক্ট কাজ করে)
+const ENABLE_POLLING = process.env.ENABLE_POLLING === 'true';
 const bot = new TelegramBot(BOT_TOKEN, { 
-    polling: {
+    polling: ENABLE_POLLING ? {
         autoStart: true,
         params: { timeout: 10 }
-    } 
+    } : false
 });
 
 // পোলিং এরর হ্যান্ডলার
