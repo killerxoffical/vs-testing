@@ -3,7 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 
 // --- কনফিগারেশন ---
-const BOT_TOKEN = process.env.BOT_TOKEN || '8653938577:AAE1g-TDAedxbpGvszb0zRyVa04560mba0c';
+const BOT_TOKEN = process.env.BOT_TOKEN || '1022873197627-h0pa915p9gt3mh19lemh0lo1nclojarn.apps.googleusercontent.com';
 const PORT = process.env.PORT || 3000;
 const RENDER_URL = 'https://ppmod-quest-unlock.onrender.com';
 
