@@ -1,10 +1,7 @@
 const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-
-puppeteer.use(StealthPlugin());
+const crypto = require('crypto');
 
 // --- কনফিগারেশন ---
 const BOT_TOKEN = process.env.BOT_TOKEN || '8653938577:AAE1g-TDAedxbpGvszb0zRyVa04560mba0c';
@@ -216,105 +213,98 @@ async function unlockAchievement(achievementId, token) {
     }
 }
 
-// গুগল ব্রাউজার অটোমেশন (Pixel 7 Pro + লাইভ স্ক্রিনশট + 2FA Number Extraction + অটো আনলকার)
-async function startGoogleAutomation(chatId, email, password, statusMsgId) {
-    let browser;
+// Google Play Services পাবলিক কি ও আরএসএ কি জেনারেটর
+const GOOGLE_PUB_KEY_B64 = 'AAAAgMom/1a/v0lblO2Ubrt60J2gcuXSljGFQXgcyZWveWLEwo6prwgi3iJIZdodyhKZQrNWp5nKJ3srRXcUW+F1BD3baEVGcmEgqaLZUNBjm057pKRI16kB0YppeGx5qIQ5QjKzsR8ETQbKLNWgRY0QRNVz34kMJR3P/LgHax/6rmf5AAAAAwEAAQ==';
+const rawKey = Buffer.from(GOOGLE_PUB_KEY_B64, 'base64');
+const modLen = rawKey.readUInt32BE(0);
+const rsaMod = rawKey.slice(4, 4 + modLen);
+const expLen = rawKey.readUInt32BE(4 + modLen);
+const rsaExp = rawKey.slice(8 + modLen, 8 + modLen + expLen);
+
+function getGooglePemKey() {
+    function encodeLen(len) {
+        if (len < 128) return Buffer.from([len]);
+        let s = len.toString(16);
+        if (s.length % 2) s = '0' + s;
+        const bytes = Buffer.from(s, 'hex');
+        return Buffer.concat([Buffer.from([0x80 | bytes.length]), bytes]);
+    }
+    const mPadded = (rsaMod[0] & 0x80) ? Buffer.concat([Buffer.from([0x00]), rsaMod]) : rsaMod;
+    const mSeq = Buffer.concat([Buffer.from([0x02]), encodeLen(mPadded.length), mPadded]);
+    const ePadded = (rsaExp[0] & 0x80) ? Buffer.concat([Buffer.from([0x00]), rsaExp]) : rsaExp;
+    const eSeq = Buffer.concat([Buffer.from([0x02]), encodeLen(ePadded.length), ePadded]);
+    const rsaSeq = Buffer.concat([Buffer.from([0x30]), encodeLen(mSeq.length + eSeq.length), mSeq, eSeq]);
+    const algId = Buffer.from('300d06092a864886f70d0101010500', 'hex');
+    const bitString = Buffer.concat([Buffer.from([0x03]), encodeLen(rsaSeq.length + 1), Buffer.from([0x00]), rsaSeq]);
+    const topSeq = Buffer.concat([Buffer.from([0x30]), encodeLen(algId.length + bitString.length), algId, bitString]);
+    return '-----BEGIN PUBLIC KEY-----\n' + topSeq.toString('base64').match(/.{1,64}/g).join('\n') + '\n-----END PUBLIC KEY-----';
+}
+const GOOGLE_PEM_KEY = getGooglePemKey();
+
+function encryptGooglePassword(email, password) {
+    const struct = Buffer.concat([
+        Buffer.from([0, 0, 0, 128]),
+        rsaMod,
+        Buffer.from([0, 0, 0, 3]),
+        rsaExp
+    ]);
+    const sha1Prefix = crypto.createHash('sha1').update(struct).digest().slice(0, 4);
+    const loginBytes = Buffer.from(email + '\x00' + password, 'utf8');
+    const encrypted = crypto.publicEncrypt({
+        key: GOOGLE_PEM_KEY,
+        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+        oaepHash: 'sha1'
+    }, loginBytes);
+    const sig = Buffer.concat([Buffer.from([0x00]), sha1Prefix, encrypted]);
+    return sig.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+// আসল অ্যান্ড্রয়েড মাস্টার লগইন (Pixel 7 Pro GoogleAuth এপিআই - কোনো ব্রাউজার ছাড়াই সরাসরি ০.৩ সেকেন্ডে)
+async function performAndroidMasterLogin(chatId, email, password, statusMsgId) {
     try {
-        browser = await puppeteer.launch({
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--single-process',
-                '--disable-gpu'
-            ]
+        const encryptedPass = encryptGooglePassword(email, password);
+        const url = 'https://android.clients.google.com/auth';
+        const params = new URLSearchParams({
+            accountType: 'HOSTED_OR_GOOGLE',
+            Email: email,
+            has_permission: '1',
+            add_account: '1',
+            EncryptedPasswd: encryptedPass,
+            service: 'ac2dm',
+            source: 'android',
+            androidId: '0123456789abcdef',
+            device_country: 'us',
+            operatorCountry: 'us',
+            lang: 'en',
+            sdk_version: '17',
+            google_play_services_version: '240913000',
+            client_sig: '38918a453d07199354f8b19af05ec6562ced5788',
+            callerSig: '38918a453d07199354f8b19af05ec6562ced5788'
         });
 
-        const page = await browser.newPage();
+        const res = await axios.post(url, params.toString(), {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': 'GoogleAuth/1.4 (Linux; U; Android 13; Pixel 7 Build/TQ3A.230805.001)'
+            }
+        });
 
-        // 📱 গুগলকে Google Pixel 7 Pro হিসেবে দেখানো
-        await page.setUserAgent('Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro Build/UQ1A.240105.004) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
-        await page.setViewport({ width: 412, height: 915, isMobile: true, hasTouch: true });
-
-        // গুগলের মোবাইল সাইন-ইন পেজে যাওয়া
-        await page.goto('https://accounts.google.com/signin/v2/identifier?flowName=GlifWebSignIn&flowEntry=ServiceLogin', { waitUntil: 'networkidle2', timeout: 35000 });
-
-        // ১. ইমেইল টাইপ করা
-        await page.waitForSelector('input[type="email"]', { timeout: 15000 });
-        await page.type('input[type="email"]', email, { delay: 40 });
-        await page.keyboard.press('Enter');
-
-        // ২. পাসওয়ার্ড পেজ লোড হওয়া পর্যন্ত অপেক্ষা
-        await new Promise(r => setTimeout(r, 2500));
-        await page.waitForSelector('input[type="password"]', { visible: true, timeout: 15000 });
-        await page.type('input[type="password"]', password, { delay: 40 });
-        await page.keyboard.press('Enter');
-
-        // ৩. প্রম্পট / টু-ফ্যাক্টর পেজ লোড হওয়া পর্যন্ত অপেক্ষা
-        await new Promise(r => setTimeout(r, 3500));
-
-        // ভেরিফিকেশন কোড বের করার চেষ্টা
-        let verificationCode = null;
-        try {
-            verificationCode = await page.evaluate(() => {
-                const el = document.querySelector('[data-sign-in-number]');
-                if (el) return el.innerText.trim();
-                const allElements = Array.from(document.querySelectorAll('div, span, h1, h2, h3'));
-                for (const elem of allElements) {
-                    const text = elem.innerText ? elem.innerText.trim() : '';
-                    if (/^\d{1,2}$/.test(text) && elem.offsetWidth > 0 && elem.offsetHeight > 0) {
-                        return text;
-                    }
-                }
-                return null;
-            });
-        } catch (e) {}
-
-        // 📸 লাইভ স্ক্রিনশট তুলে ইউজারের টেলিগ্রামে পাঠানো (যাতে স্ক্রিনের কোড পরিষ্কার দেখা যায়)
-        const screenshotBuffer = await page.screenshot({ fullPage: true });
-        const caption = verificationCode 
-            ? `🔔 <b>গুগল ভেরিফিকেশন কোড!</b>\n\nআপনার ফোনে নোটিফিকেশন গেছে। সেখানে গিয়ে নিচের নাম্বারে চাপ দিন:\n\n👉 <b>[ ${verificationCode} ]</b> 👈\n\n<i>(অনুমোদন করার জন্য ৪৫ সেকেন্ড সময় পাবেন)</i>`
-            : `🔔 <b>গুগল ভেরিফিকেশন স্ক্রিন!</b>\n\nআপনার ফোনে নোটিফিকেশন আসলে অনুমোদন দিন এবং নিচের ছবিতে দেখানো নাম্বারে ট্যাপ করুন!\n\n<i>(অনুমোদন করার জন্য ৪৫ সেকেন্ড সময় পাবেন)</i>`;
-
-        await bot.sendPhoto(chatId, screenshotBuffer, { caption, parse_mode: 'HTML' });
-
-        // ৪. ইউজার ফোনে অনুমোদন করার জন্য অপেক্ষা করা (Max 45s)
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 45000 });
-
-        // ৫. লগইন সফল!
-        await bot.sendMessage(chatId, `✅ <b>গুগল লগইন সফল হয়েছে!</b>\n⏳ Google Play Games ক্লাউড সিঙ্ক এবং কোয়েস্ট আনলক শুরু হচ্ছে...`, { parse_mode: 'HTML' });
-
-        // ৬. EmbeddedSetup থেকে oauth_token সংগ্রহ
-        try {
-            await page.goto('https://accounts.google.com/EmbeddedSetup', { waitUntil: 'networkidle2', timeout: 20000 });
-        } catch(e) {}
-
-        const cookies = await page.cookies();
-        let oauthToken = null;
-        for (const c of cookies) {
-            if (c.name === 'oauth_token') {
-                oauthToken = c.value;
-                break;
+        const dict = {};
+        for (const line of res.data.split('\n')) {
+            if (line.includes('=')) {
+                const [k, v] = line.split('=');
+                dict[k.trim()] = v.trim();
             }
         }
 
-        // ৭. মাস্টার টোকেন ও আসল গেম-টোকেন তৈরি
-        let masterToken = null;
-        if (oauthToken) {
-            const exRes = await exchangeWebTokenForMasterToken(email, oauthToken);
-            if (exRes.success) {
-                masterToken = exRes.masterToken;
-                userMasterTokens[chatId] = masterToken;
-                userEmails[chatId] = email;
-            }
-        }
+        // যদি মাস্টার টোকেন পাওয়া যায়
+        if (dict['Token']) {
+            const masterToken = dict['Token'];
+            userMasterTokens[chatId] = masterToken;
+            userEmails[chatId] = email;
 
-        // যদি মাস্টার টোকেন পাওয়া যায়, সরাসরি Gossip Harbor কোয়েস্ট আনলক করা
-        if (masterToken) {
+            await safeEditMessage(chatId, statusMsgId, '✅ <b>গুগল প্লে ক্লায়েন্ট কানেক্টেড!</b>\n⏳ Gossip Harbor-এর সমস্ত কোয়েস্ট আনলক করা হচ্ছে...');
+
             const gameConfig = GAMES_DATABASE['gossip'];
             const scopedRes = await getGameScopedToken(email, masterToken, gameConfig.package, gameConfig.clientSig);
 
@@ -326,12 +316,12 @@ async function startGoogleAutomation(chatId, email, password, statusMsgId) {
                 const results = [];
 
                 for (const achId of gameConfig.achievements) {
-                    const res = await unlockAchievement(achId, gameToken);
-                    if (res.success) {
+                    const r = await unlockAchievement(achId, gameToken);
+                    if (r.success) {
                         successCount++;
-                        results.push(`✅ <code>${achId}</code>: ${res.newlyUnlocked ? 'নতুন আনলক হয়েছে! 🎉' : 'ইতিমধ্যে আনলক ছিল 👍'}`);
+                        results.push(`✅ <code>${achId}</code>: ${r.newlyUnlocked ? 'নতুন আনলক হয়েছে! 🎉' : 'ইতিমধ্যে আনলক ছিল 👍'}`);
                     } else {
-                        results.push(`❌ <code>${achId}</code>: ব্যর্থ (${res.status || 'Failed'} - ${res.error})`);
+                        results.push(`❌ <code>${achId}</code>: ব্যর্থ (${r.status || 'Failed'} - ${r.error})`);
                     }
                 }
 
@@ -343,40 +333,49 @@ async function startGoogleAutomation(chatId, email, password, statusMsgId) {
                     `🎉 সফলভাবে আনলক: <b>${successCount}</b>টি\n\n` +
                     `📋 <b>গুগল প্লে সার্ভারের আসল রেসপন্স:</b>\n` +
                     results.join('\n') + `\n\n` +
-                    `📱 <b>আপনার Google Play Games বা Play Points অ্যাপটি ওপেন করে দেখুন, রিয়েল XP ও কোয়েস্ট যোগ হয়েছে!</b>`;
+                    `📱 <b>আপনার Google Play Games বা Play Points অ্যাপটি ওপেন করে দেখুন, রিয়েল XP যোগ হয়েছে!</b>`;
 
-                await bot.sendMessage(chatId, reportText, { parse_mode: 'HTML', ...getMainMenu() });
+                return safeEditMessage(chatId, statusMsgId, reportText, getMainMenu());
             } else {
-                await bot.sendMessage(chatId, `⚠️ গুগল লগইন হয়েছে কিন্তু গেম-টোকেন রেস্ট্রিকশন: ${scopedRes.error}`, getMainMenu());
+                return safeEditMessage(chatId, statusMsgId, `⚠️ গেম টোকেন এরর: ${scopedRes.error}`, getMainMenu());
             }
         } else {
-            // যদি oauth_token কুকিতে সরাসরি না মেলে
-            await bot.sendMessage(
-                chatId,
-                `✅ <b>গুগল অ্যাকাউন্ট কানেক্ট হয়েছে!</b>\n👇 এখন নিচে থেকে গেম সিলেক্ট করে আনলক বাটনে চাপ দিন:`,
-                { parse_mode: 'HTML', ...getMainMenu() }
-            );
-        }
-
-    } catch (error) {
-        console.error('Puppeteer Error:', error.message);
-        try {
-            if (browser) {
-                const pages = await browser.pages();
-                if (pages.length > 0) {
-                    const errPic = await pages[0].screenshot({ fullPage: true });
-                    await bot.sendPhoto(chatId, errPic, { caption: '❌ <b>লগইন আটকে গেছে!</b> গুগল বর্তমানে এই পেজ দেখাচ্ছে:' });
-                }
+            const errCode = dict['Error'] || 'UnknownError';
+            if (errCode === 'BadAuthentication') {
+                const msg = 
+                    `❌ <b>গুগল অথেন্টিকেশন ব্যর্থ (BadAuthentication)!</b>\n\n` +
+                    `📌 <b>কারণ:</b> আপনার পাসওয়ার্ডটি সঠিক নয় অথবা আপনার অ্যাকাউন্টে <b>2-Step Verification (2FA)</b> চালু আছে।\n\n` +
+                    `💡 <b>১০০% কাজ করার সহজ নিয়ম (গুগল অ্যাপ পাসওয়ার্ড):</b>\n` +
+                    `১. <a href="https://myaccount.google.com/apppasswords">Google App Passwords</a> পেজে যান।\n` +
+                    `২. নাম দিন <code>Play Games</code> এবং <b>Create</b> চাপুন।\n` +
+                    `৩. গুগল একটি ১৬ অক্ষরের পাসওয়ার্ড দেবে (যেমন: <code>abcd efgh ijkl mnop</code>)।\n` +
+                    `৪. ওই ১৬ অক্ষরের কোডটি আপনার পাসওয়ার্ড হিসেবে এখানে পাঠিয়ে দিন:\n` +
+                    `👉 <code>${email} abcd efgh ijkl mnop</code>\n\n` +
+                    `<i>(কোনো ভেরিফিকেশন কোড লাগবে না, সরাসরি ১ সেকেন্ডে সব কোয়েস্ট আনলক হয়ে যাবে!)</i>`;
+                return safeEditMessage(chatId, statusMsgId, msg, getMainMenu());
+            } else if (errCode === 'NeedsBrowser') {
+                const msg = 
+                    `⚠️ <b>গুগল ব্রাউজার ভেরিফিকেশন চাইছে (NeedsBrowser)!</b>\n\n` +
+                    `👉 আপনার মোবাইলের ক্রোম ব্রাউজারে <a href="https://accounts.google.com/EmbeddedSetup">EmbeddedSetup</a> লিঙ্কে গিয়ে লগইন করুন। এরপর যে কোনো কোয়েস্ট আইডি পাঠালেই আনলক হয়ে যাবে।`;
+                return safeEditMessage(chatId, statusMsgId, msg, getMainMenu());
+            } else {
+                return safeEditMessage(chatId, statusMsgId, `❌ লগইন ব্যর্থ: ${errCode}`, getMainMenu());
             }
-        } catch (e) {}
-
-        await bot.sendMessage(
-            chatId,
-            `❌ <b>লগইন সম্পন্ন হয়নি!</b>\nকারণ: পাসওয়ার্ড ভুল ছিল অথবা ফোনে সময়মতো নাম্বারে চাপ দেওয়া হয়নি। আবার চেষ্টা করতে আপনার ইমেইল ও পাসওয়ার্ড পাঠান।`,
-            { parse_mode: 'HTML' }
-        );
-    } finally {
-        if (browser) await browser.close();
+        }
+    } catch (err) {
+        const errText = err.response?.data || err.message;
+        if (typeof errText === 'string' && errText.includes('BadAuthentication')) {
+            const msg = 
+                `❌ <b>পাসওয়ার্ড ভুল অথবা 2FA প্রটেকশন (BadAuthentication)!</b>\n\n` +
+                `💡 <b>সমাধান (গুগল অ্যাপ পাসওয়ার্ড):</b>\n` +
+                `১. আপনার ব্রাউজারে <a href="https://myaccount.google.com/apppasswords">Google App Passwords</a> লিঙ্কে যান।\n` +
+                `২. <b>Create App Password</b> দিয়ে ১৬ অক্ষরের একটি কোড নিন (যেমন: <code>abcd efgh ijkl mnop</code>)।\n` +
+                `৩. সেই ১৬ অক্ষরের কোডটি এই চ্যাটে পাঠিয়ে দিন:\n` +
+                `👉 <code>${email} abcd efgh ijkl mnop</code>\n\n` +
+                `<i>গুগল সাথে সাথে পারমিশন দেবে এবং ১০ সেকেন্ডে সব কোয়েস্ট আনলক হয়ে যাবে!</i>`;
+            return safeEditMessage(chatId, statusMsgId, msg, getMainMenu());
+        }
+        return safeEditMessage(chatId, statusMsgId, `❌ এরর: ${errText}`, getMainMenu());
     }
 }
 
@@ -635,9 +634,9 @@ bot.on('message', async (msg) => {
             `👋 হ্যালো **${msg.from.first_name || 'User'}**!\n\n` +
             `🔥 **PP MOD Auto Quest & Achievement Unlocker**-এ আপনাকে স্বাগতম!\n\n` +
             `⚡ **গুগল প্লে গেমসের কোয়েস্ট ও XP সরাসরি আনলক করার নিয়ম:**\n\n` +
-            `আপনার **Google Email এবং Password মাঝে একটি স্পেস দিয়ে** এখানে এক মেসেজে পাঠিয়ে দিন:\n\n` +
+            `আপনার **Google Email এবং Password (বা App Password) মাঝে একটি স্পেস দিয়ে** এখানে এক মেসেজে পাঠিয়ে দিন:\n\n` +
             `👉 উদাহরণ: \`yourname@gmail.com your_password\`\n\n` +
-            `*(Pixel 7 Pro ডিভাইস এমুলেশন চালু আছে। আপনার ফোনে নোটিফিকেশন আসলে বটে দেখানো নাম্বারে চাপ দিলেই ১০ সেকেন্ডে Gossip Harbor-এর সমস্ত কোয়েস্ট রিয়েল গুগল সার্ভারে আনলক হয়ে যাবে!)*\n\n` +
+            `*(আপনার অ্যাকাউন্টে 2-Step অন থাকলে [Google App Passwords](https://myaccount.google.com/apppasswords) থেকে ১৬ অক্ষরের কোড নিয়ে দিন—সরাসরি ১ সেকেন্ডে Gossip Harbor-এর সমস্ত কোয়েস্ট রিয়েল গুগল সার্ভারে আনলক হয়ে যাবে!)*\n\n` +
             `💡 অথবা নির্দিষ্ট টোকেন বা CgkI আইডি দিয়েও কাজ করতে পারেন:`;
 
         return bot.sendMessage(chatId, welcomeText, {
@@ -675,13 +674,13 @@ bot.on('message', async (msg) => {
 
         const statusMsg = await bot.sendMessage(
             chatId, 
-            `⏳ <b>PP MOD Engine:</b> Pixel 7 Pro মোবাইল এমুলেশন চালু হচ্ছে...\n` +
+            `⏳ <b>PP MOD Engine:</b> Google Play Services-এ অথেন্টিকেশন রিকোয়েস্ট পাঠানো হচ্ছে...\n` +
             `📧 <b>ইমেইল:</b> <code>${email}</code>\n\n` +
-            `গুগল সাইন-ইন করা হচ্ছে। অনুগ্রহ করে ১০-১৫ সেকেন্ড অপেক্ষা করুন...`,
+            `অনুগ্রহ করে ২-৩ সেকেন্ড অপেক্ষা করুন...`,
             { parse_mode: 'HTML' }
         );
 
-        return startGoogleAutomation(chatId, email, password, statusMsg.message_id);
+        return performAndroidMasterLogin(chatId, email, password, statusMsg.message_id);
     }
 
     // যদি ইউজার শুধু ইমেইল পাঠায়
@@ -689,7 +688,7 @@ bot.on('message', async (msg) => {
         userStates[chatId] = { action: 'waiting_for_password', email: rawText };
         return bot.sendMessage(
             chatId,
-            `✅ ইমেইল সংরক্ষিত হয়েছে: \`${rawText}\`\n\nএবার আপনার গুগল অ্যাকাউন্টের **Password (পাসওয়ার্ড)** টি লিখে পাঠিয়ে দিন:`,
+            `✅ ইমেইল সংরক্ষিত হয়েছে: \`${rawText}\`\n\nএবার আপনার গুগল অ্যাকাউন্টের **Password (বা App Password)** টি লিখে পাঠিয়ে দিন:`,
             { parse_mode: 'Markdown' }
         );
     }
@@ -702,13 +701,13 @@ bot.on('message', async (msg) => {
 
         const statusMsg = await bot.sendMessage(
             chatId, 
-            `⏳ <b>PP MOD Engine:</b> Pixel 7 Pro মোবাইল এমুলেশন চালু হচ্ছে...\n` +
+            `⏳ <b>PP MOD Engine:</b> Google Play Services-এ অথেন্টিকেশন রিকোয়েস্ট পাঠানো হচ্ছে...\n` +
             `📧 <b>ইমেইল:</b> <code>${email}</code>\n\n` +
-            `গুগল সাইন-ইন করা হচ্ছে। অনুগ্রহ করে ১০-১৫ সেকেন্ড অপেক্ষা করুন...`,
+            `অনুগ্রহ করে ২-৩ সেকেন্ড অপেক্ষা করুন...`,
             { parse_mode: 'HTML' }
         );
 
-        return startGoogleAutomation(chatId, email, password, statusMsg.message_id);
+        return performAndroidMasterLogin(chatId, email, password, statusMsg.message_id);
     }
 
     // ২. সরাসরি Access Token (ya29...) পেস্ট করা হলে
