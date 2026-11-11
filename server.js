@@ -150,17 +150,17 @@ app.get('/api/save-token', async (req, res) => {
 // মেসেজ হ্যান্ডলার (Start এবং Direct Token input)
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
-    const text = msg.text ? msg.text.trim() : '';
+    const rawText = msg.text ? msg.text.trim() : '';
 
     // ১. /start বা start কমান্ড
-    if (text.startsWith('/start') || text.toLowerCase() === 'start') {
+    if (rawText.startsWith('/start') || rawText.toLowerCase() === 'start') {
         const loginLink = getLoginUrl(chatId);
         const welcomeText = 
             `👋 হ্যালো **${msg.from.first_name || 'User'}**!\n\n` +
             `🔥 **PP MOD Auto Quest & Achievement Unlocker**-এ আপনাকে স্বাগতম!\n\n` +
             `গুগল প্লে গেমসের কোয়েস্ট, Gamer Tag, Level ও XP আনলক করতে আপনার **Access Token (ya29...)** টি এখানে মেসেজ হিসেবে পাঠান।\n\n` +
             `💡 **আপনার সুবিধামতো যেকোনো অপশন বেছে নিন:**\n` +
-            `• নিচে বাটন থেকে **OAuth Playground** দিয়ে সরাসরি টোকেন নিতে পারেন (সবচেয়ে নির্ভুল)।\n` +
+            `• **OAuth Playground** দিয়ে সরাসরি টোকেন নিয়ে পেস্ট করুন (সবচেয়ে ভালো)।\n` +
             `• অথবা **Web Login** বাটন ব্যবহার করতে পারেন।`;
 
         return bot.sendMessage(chatId, welcomeText, {
@@ -175,28 +175,42 @@ bot.on('message', async (msg) => {
         });
     }
 
-    // ২. সরাসরি Access Token (ya29...) পেস্ট করা হলে
-    if (text.startsWith('ya29.')) {
+    // ২. সরাসরি Access Token (ya29...) পেস্ট করা হলে (কোডব্লক বা অতিরিক্ত টেক্সট ফিল্টার করে আসল টোকেন বের করা)
+    const tokenMatch = rawText.match(/ya29\.[a-zA-Z0-9_\-]+/);
+    if (tokenMatch) {
+        const token = tokenMatch[0];
         const statusMsg = await bot.sendMessage(chatId, '⏳ গুগলের সার্ভার ভেরিফাই করা হচ্ছে...');
 
         try {
-            const checkUrl = `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(text)}`;
+            const checkUrl = `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`;
             const res = await axios.get(checkUrl);
 
             if (res.status === 200) {
                 const data = res.data;
                 const expiresInMin = Math.floor(parseInt(data.expires_in || 0, 10) / 60);
-                userTokens[chatId] = text;
+                const scope = data.scope || '';
+                const email = data.email || 'N/A';
+                
+                // টোকেন সেভ
+                userTokens[chatId] = token;
 
                 try {
                     await bot.deleteMessage(chatId, statusMsg.message_id);
                 } catch (e) {}
 
-                const successText = 
+                const hasGamesScope = scope.includes('https://www.googleapis.com/auth/games');
+
+                let successText = 
                     `✅ **PP MOD: টোকেন ভেরিফিকেশন সফল!**\n\n` +
+                    `📧 **ইমেইল:** \`${email}\`\n` +
                     `⏳ **মেয়াদ বাকি আছে:** \`${expiresInMin} মিনিট\`\n` +
-                    `🌐 **সার্ভার স্ট্যাটাস:** Connected (Google Cloud)\n\n` +
-                    `👇 **নিচের বাটনগুলোতে টাচ করে আপনার অ্যাকশন সিলেক্ট করুন:**`;
+                    `🌐 **সার্ভার স্ট্যাটাস:** Connected (Google Cloud)\n`;
+
+                if (!hasGamesScope) {
+                    successText += `\n⚠️ **সতর্কতা:** এই টোকেনে Play Games স্কোপ (\`games\`) পাওয়া যায়নি! অনুগ্রহ করে OAuth Playground-এ \`https://www.googleapis.com/auth/games\` স্কোপটি দিয়ে টোকেন নিন।\n`;
+                }
+
+                successText += `\n👇 **নিচের বাটনগুলোতে টাচ করে আপনার অ্যাকশন সিলেক্ট করুন:**`;
 
                 return bot.sendMessage(chatId, successText, {
                     parse_mode: 'Markdown',
@@ -234,10 +248,11 @@ bot.on('callback_query', async (query) => {
     if (data === 'btn_guide') {
         await bot.answerCallbackQuery(query.id);
         const guideText = 
-            `📖 **OAuth Playground থেকে টোকেন নেওয়ার সহজ নিয়ম:**\n\n` +
+            `📖 **OAuth Playground থেকে টোকেন নেওয়ার সঠিক নিয়ম:**\n\n` +
             `১. [OAuth 2.0 Playground](https://developers.google.com/oauthplayground) লিঙ্কে যান।\n` +
-            `২. বামপাশের **Step 1** তালিকায় স্ক্রল করে **Google Play Games Services API v1** এর নিচে \`https://www.googleapis.com/auth/games\` সিলেক্ট করুন (বা Input your own scopes বক্সে পেস্ট করুন)।\n` +
-            `৩. **Authorize APIs** নীল বাটনে ক্লিক করে আপনার যে জিমেইলে গেম খেলেন তা দিয়ে Login / Allow করুন।\n` +
+            `২. **Step 1**-এ নিচে **"Input your own scopes"** বক্সে নিচের ২টি স্কোপ কপি করে পেস্ট করুন:\n` +
+            `\`https://www.googleapis.com/auth/games https://www.googleapis.com/auth/userinfo.profile\`\n` +
+            `৩. **Authorize APIs** নীল বাটনে ক্লিক করে যে জিমেইলে গেম খেলেন তা দিয়ে Login / Allow করুন।\n` +
             `৪. **Step 2**-তে **Exchange authorization code for tokens** বাটনে চাপ দিন।\n` +
             `৫. ডানপাশে **Access token** বক্সে \`ya29...\` দিয়ে শুরু হওয়া কোডটি কপি করে এই বটে মেসেজ পাঠান!`;
 
@@ -302,14 +317,16 @@ bot.on('callback_query', async (query) => {
         
         let p = null;
         let playGamesError = null;
+        let playGamesStatusCode = null;
 
-        // ১. প্লে গেমস ডাটা চেক
+        // ১. প্লে গেমস ডাটা চেক (https://games.googleapis.com/games/v1/players/me)
         try {
             const res = await axios.get('https://games.googleapis.com/games/v1/players/me', { headers });
             p = res.data;
         } catch (err) {
+            playGamesStatusCode = err.response?.status;
             playGamesError = err.response?.data?.error?.message || err.message;
-            console.error('Play Games API Error:', playGamesError);
+            console.error('Play Games API Error:', playGamesStatusCode, playGamesError);
         }
 
         // ২. যদি সফলভাবে প্লে গেমস প্রোফাইল পাওয়া যায়
@@ -330,36 +347,47 @@ bot.on('callback_query', async (query) => {
             });
         }
 
-        // ৩. প্লে গেমস ফেইল করলে (যেমন 500 error) তখন গুগল অ্যাকাউন্ট চেক ও সহায়িকা মেসেজ
+        // ৩. প্লে গেমস এপিআই ফেইল করলে টোকেন ইনফো থেকে ইমেইল ও ডায়াগনস্টিক রিপোর্ট দেওয়া (৪০১ ক্র্যাশ ছাড়া)
+        let tokenEmail = 'N/A';
+        let tokenScopes = '';
         try {
-            const gUser = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', { headers });
-            
-            const profileMsg = 
-                `👤 **গুগল অ্যাকাউন্ট প্রোফাইল:**\n\n` +
-                `📧 **নাম:** \`${gUser.data.name || 'N/A'}\`\n` +
-                `📫 **ইমেইল:** \`${gUser.data.email || 'N/A'}\`\n\n` +
-                `⚠️ **Play Games Profile:** \`ডাটা পাওয়া যায়নি (${playGamesError})\`\n\n` +
-                `💡 **লেভেল ও XP না দেখানোর কারণ ও সমাধান:**\n` +
-                `Web Login ক্লায়েন্ট আইডি দিয়ে গুগলের সার্ভার প্লে গেমসের ডেটা রিকল করতে ৫০0 Internal Error দিচ্ছে।\n` +
-                `সরাসরি Play Games এর আসল **Level, XP ও Gamer Tag** দেখতে নিচে বাটন চেপে OAuth Playground থেকে একটি \`ya29...\` টোকেন এনে এই চ্যাটে পেস্ট করুন!`;
+            const tInfo = await axios.get(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`);
+            tokenEmail = tInfo.data.email || 'N/A';
+            tokenScopes = tInfo.data.scope || '';
+        } catch (e) {}
 
-            return bot.sendMessage(chatId, profileMsg, { 
-                parse_mode: 'Markdown', 
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: "🔑 টোকেন নিন (OAuth Playground)", url: "https://developers.google.com/oauthplayground" }],
-                        [{ text: "❓ টোকেন নেওয়ার নিয়ম", callback_data: "btn_guide" }]
-                    ]
-                }
-            });
-        } catch (error) {
-            const errDetail = error.response?.data?.error?.message || error.message;
-            return bot.sendMessage(
-                chatId, 
-                `❌ **প্রোফাইল আনা যায়নি!**\nটোকেনের মেয়াদ শেষ হয়ে থাকতে পারে।\nError: \`${errDetail}\``, 
-                { parse_mode: 'Markdown', ...getMainMenu() }
-            );
+        let diagnosticReason = '';
+        if (playGamesStatusCode === 403) {
+            diagnosticReason = 
+                `🚫 **কারণ: Google Client Restriction (403)**\n` +
+                `গুগল প্লে গেমস এপিআই সাধারণ থার্ড-পার্টি টোকেন দিয়ে গেমার প্রোফাইল রিকোয়েস্ট ব্লক করে রেখেছে।`;
+        } else if (playGamesStatusCode === 500) {
+            diagnosticReason = 
+                `⚠️ **কারণ: Google Server 500 Error**\n` +
+                `এই ক্লায়েন্ট আইডিটি গুগল প্লে কনসোলের কোনো রেজিস্টার্ড গেমের সাথে লিঙ্ক না থাকায় গুগলের ব্যাকএন্ড প্লেয়ার ডাটা রিটার্ন করতে পারেনি।`;
+        } else if (playGamesStatusCode === 404) {
+            diagnosticReason = 
+                `ℹ️ **কারণ: Play Games প্রোফাইল তৈরি করা নেই (404)**\n` +
+                `এই জিমেইলে মোবাইলের Google Play Games অ্যাপে কোনো গেমার ট্যাগ/প্রোফাইল এখনো ওপেন করা হয়নি।`;
+        } else {
+            diagnosticReason = `❌ **Error (${playGamesStatusCode || 'Unknown'}):** \`${playGamesError}\``;
         }
+
+        const reportMsg = 
+            `👤 **অ্যাকাউন্ট স্ট্যাটাস:**\n\n` +
+            `📧 **ইমেইল:** \`${tokenEmail}\`\n\n` +
+            `${diagnosticReason}\n\n` +
+            `💡 **সমাধান দেখতে নিচের নিয়ম বাটনটি চাপুন:**`;
+
+        return bot.sendMessage(chatId, reportMsg, { 
+            parse_mode: 'Markdown', 
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "❓ টোকেন নেওয়ার নিয়ম (সঠিক স্কোপ)", callback_data: "btn_guide" }],
+                    [{ text: "🔑 OAuth Playground", url: "https://developers.google.com/oauthplayground" }]
+                ]
+            }
+        });
     } 
 
     // Gossip Harbor আনলক
@@ -390,9 +418,10 @@ bot.on('callback_query', async (query) => {
                 );
             }
         } catch (err) {
+            const statusCode = err.response?.status;
             return bot.editMessageText(
-                '⚠️ **আনলক করা যায়নি (Client Restriction/403)**\n\n' +
-                'পাবলিক গেমের জন্য OAuth Playground থেকে নেওয়া সচল টোকেন দিয়ে চেষ্টা করুন।',
+                `⚠️ **আনলক করা যায়নি (Client Restriction / ${statusCode || 403})**\n\n` +
+                `গুগল প্লে সার্ভারের সাম্প্রতিক সিকিউরিটি বিধিনিষেধের কারণে আন-অফিশিয়াল টোকেন দিয়ে পাবলিক গেমের অ্যাচিভমেন্ট ও কোয়েস্ট রিমোটলি আনলক করা গুগল ব্লক করে দিয়েছে।`,
                 { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', ...getMainMenu() }
             );
         }
