@@ -6,7 +6,7 @@ import json
 # ==========================================
 #               VERSION CONFIG
 # ==========================================
-VERSION = "v2.7.0 [FARM-HEROES-SAGA]"
+VERSION = "v3.0.0 [AUTO-SCAN & UNLOCK]"
 
 # কালার কোডস
 G = '\033[92m'  # Green
@@ -19,74 +19,76 @@ BOLD = '\033[1m'
 
 print(f"""{C}{BOLD}
 ╔═══════════════════════════════════════════════════╗
-║     ⚡ GPGS ACHIEVEMENT AUTO UNLOCKER ⚡         ║
-║            Target: Farm Heroes Saga               ║
+║     ⚡ GPGS AUTO SCAN & ACHIEVEMENT UNLOCKER ⚡   ║
+║          Target: Gossip Harbor & Others           ║
 ║            Version: {M}{VERSION}{C}          ║
 ╚═══════════════════════════════════════════════════╝{W}""")
 
-print(f"{Y}[?] HttpCanary থেকে পাওয়া Farm Heroes Saga-র ya29... টোকেনটি দিন:{W}")
+print(f"{Y}[?] HttpCanary থেকে পাওয়া গেমের ya29... টোকেনটি দিন:{W}")
 token = input(f"{BOLD}{C}Token > {W}").strip()
 
 if not token or not token.startswith("ya29."):
-    print(f"\n{R}[✗] ভুল বা খালি টোকেন! টোকেনটি অবশ্যই 'ya29.' দিয়ে শুরু হতে হবে।{W}")
+    print(f"\n{R}[✗] ভুল টোকেন! টোকেনটি অবশ্যই 'ya29.' দিয়ে শুরু হতে হবে।{W}")
     sys.exit()
-
-# Farm Heroes Saga এর ৮টি প্রধান Achievement IDs
-achievements = [
-    {"name": "Welcome to the Farm (Level 1)",  "id": "CgkI-8D2tvcPEAIQAQ"},
-    {"name": "Cropsie Collector (1000 Crops)", "id": "CgkI-8D2tvcPEAIQAg"},
-    {"name": "Super Cropsie (First Super)",    "id": "CgkI-8D2tvcPEAIQAw"},
-    {"name": "Rancid Defeated (Beat Rancid)",  "id": "CgkI-8D2tvcPEAIQBA"},
-    {"name": "Episode 1 Cleared (Level 15)",   "id": "CgkI-8D2tvcPEAIQBQ"},
-    {"name": "Hero Mode Master (10 Times)",    "id": "CgkI-8D2tvcPEAIQBg"},
-    {"name": "Star Farmer (3 Stars in 10)",   "id": "CgkI-8D2tvcPEAIQBw"},
-    {"name": "Farm Expert (Reach Level 50)",   "id": "CgkI-8D2tvcPEAIQCA"}
-]
 
 headers = {
     "Authorization": f"Bearer {token}",
     "Content-Type": "application/json"
 }
 
-print(f"\n{M}[*] গুগলের সাথে কানেক্ট করা হচ্ছে এবং আনলক প্রক্রিয়া শুরু হচ্ছে...{W}\n")
+print(f"\n{M}[*] গুগলের সার্ভার স্ক্যান করে গেমের সমস্ত অ্যাচিভমেন্ট খোঁজা হচ্ছে...{W}")
+
+# গুগলের সার্ভার থেকে এই গেমের সব অ্যাচিভমেন্ট স্বয়ংক্রিয়ভাবে আনা
+fetch_url = "https://games.googleapis.com/games/v1/players/me/achievements"
+res = requests.get(fetch_url, headers=headers)
+
+if res.status_code != 200:
+    print(f"\n{R}[✗] স্ক্যান ব্যর্থ হয়েছে! Status: {res.status_code}{W}")
+    try:
+        print(f"{Y}গুগলের কারণ: {res.json().get('error', {}).get('message')}{W}")
+    except:
+        print(res.text)
+    sys.exit()
+
+data = res.json()
+items = data.get("items", [])
+
+if not items:
+    print(f"\n{Y}[!] কোনো অ্যাচিভমেন্ট পাওয়া যায়নি বা সার্ভার ডাটা খালি।{W}")
+    sys.exit()
+
+print(f"{G}[✓] সফলভাবে {len(items)}টি অ্যাচিভমেন্ট খুঁজে পাওয়া গেছে!{W}\n")
+print(f"{C}[*] অটোমেটিক আনলক শুরু হচ্ছে...{W}\n")
 time.sleep(1)
 
 unlocked_count = 0
 already_unlocked = 0
 failed_count = 0
 
-for ach in achievements:
-    url = f"https://games.googleapis.com/games/v1/achievements/{ach['id']}/unlock"
-    try:
-        res = requests.post(url, headers=headers)
-        
-        if res.status_code == 200:
-            data = res.json()
-            if data.get("newlyUnlocked") == True:
-                print(f"{G}[✓] SUCCESS:{W} {ach['name']} ➔ {G}+XP Added! (Unlocked){W}")
-                unlocked_count += 1
-            else:
-                print(f"{Y}[!] ALREADY UNLOCKED:{W} {ach['name']} (আগে থেকেই ছিল)")
-                already_unlocked += 1
-        elif res.status_code == 401:
-            print(f"\n{R}[✗] টোকেনের মেয়াদ শেষ হয়ে গেছে! HttpCanary থেকে নতুন টোকেন নিন।{W}")
-            break
-        else:
-            print(f"{R}[✗] FAILED:{W} {ach['name']} | Status: {res.status_code}")
-            try:
-                err_msg = res.json().get('error', {}).get('message', res.text)
-                print(f"{Y}   └─ Reason: {err_msg}{W}")
-            except:
-                pass
-            failed_count += 1
-            
-    except Exception as e:
-        print(f"{R}[✗] Network Error:{W} {ach['name']}")
+for item in items:
+    ach_id = item.get("id")
+    ach_state = item.get("achievementState")
+    
+    # যদি আগেই আনলক করা থাকে
+    if ach_state == "UNLOCKED":
+        print(f"{Y}[!] ALREADY DONE:{W} ID: {ach_id} (আগে থেকেই আনলক)")
+        already_unlocked += 1
+        continue
+    
+    # আনলক করার রিকোয়েস্ট
+    unlock_url = f"https://games.googleapis.com/games/v1/achievements/{ach_id}/unlock"
+    unlock_res = requests.post(unlock_url, headers=headers)
+    
+    if unlock_res.status_code == 200:
+        print(f"{G}[✓] UNLOCKED:{W} ID: {ach_id} ➔ {G}+XP Added!{W}")
+        unlocked_count += 1
+    else:
+        print(f"{R}[✗] FAILED:{W} ID: {ach_id} | Status: {unlock_res.status_code}")
         failed_count += 1
+        
+    time.sleep(0.4)
 
-    time.sleep(0.5)
-
-# ফলাফল সামারি
+# সামারি
 print(f"\n{C}══════════════════ [ RESULT SUMMARY ] ══════════════════{W}")
 print(f"{G}নতুন আনলক হয়েছে  : {unlocked_count}{W}")
 print(f"{Y}আগে থেকেই করা ছিল : {already_unlocked}{W}")
@@ -94,4 +96,4 @@ print(f"{R}ব্যর্থ হয়েছে       : {failed_count}{W}")
 print(f"{C}════════════════════════════════════════════════════════{W}")
 
 if unlocked_count > 0:
-    print(f"\n{M}{BOLD}🎉 অভিনন্দন! আপনার Google Play Games অ্যাপে রিফ্রেশ করে দেখুন XP বেড়ে গেছে!{W}\n")
+    print(f"\n{M}{BOLD}🎉 অভিনন্দন! আপনার গুগল প্লে গেমসে Gossip Harbor এর সব XP যোগ হয়ে গেছে!{W}\n")
