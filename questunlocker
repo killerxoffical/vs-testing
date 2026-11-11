@@ -3,7 +3,7 @@ from telebot import types
 import requests
 
 # --- আপনার BotFather-এর টোকেন বসান ---
-BOT_TOKEN = "এখানে_আপনার_BOTFATHER_TOKEN_দিন"
+BOT_TOKEN = "8653938577:AAE1g-TDAedxbpGvszb0zRyVa04560mba0c"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
