@@ -3,35 +3,42 @@ import time
 import sys
 import json
 
-VERSION = "v2.5.1 [DEBUG-MODE]"
+# ==========================================
+#               VERSION CONFIG
+# ==========================================
+VERSION = "v2.6.0 [OFFICIAL-GPGS-SYNC]"
 
-# কালার কোডস
-G = '\033[92m'
-R = '\033[91m'
-Y = '\033[93m'
-C = '\033[96m'
-M = '\033[95m'
-W = '\033[0m'
+# কালার কোডস (ANSI Colors)
+G = '\033[92m'  # Green
+R = '\033[91m'  # Red
+Y = '\033[93m'  # Yellow
+C = '\033[96m'  # Cyan
+M = '\033[95m'  # Magenta
+W = '\033[0m'   # Reset
 BOLD = '\033[1m'
 
 print(f"""{C}{BOLD}
 ╔═══════════════════════════════════════════════════╗
 ║     ⚡ GPGS ACHIEVEMENT AUTO UNLOCKER ⚡         ║
-║         Current Version: {M}{VERSION}{C}         ║
+║          Official Play Games Hub Edition          ║
+║            Version: {M}{VERSION}{C}          ║
 ╚═══════════════════════════════════════════════════╝{W}""")
 
 print(f"{Y}[?] HttpCanary থেকে পাওয়া ya29... টোকেনটি পেস্ট করুন:{W}")
 token = input(f"{BOLD}{C}Token > {W}").strip()
 
-if not token:
-    print(f"\n{R}[✗] টোকেন খালি রাখা যাবে না!{W}")
+if not token or not token.startswith("ya29."):
+    print(f"\n{R}[✗] ভুল বা খালি টোকেন! টোকেনটি অবশ্যই 'ya29.' দিয়ে শুরু হতে হবে।{W}")
     sys.exit()
 
+# Google Play Games (App ID: 593950602418) এর নিজস্ব Built-in Achievements
 achievements = [
-    {"name": "First Flight (Level 1)",       "id": "CgkI-re9-Y8EEAIQAQ"},
-    {"name": "Pig Popper (Pop 100 Pigs)",    "id": "CgkI-re9-Y8EEAIQAg"},
-    {"name": "Spell Caster (Use Spells)",    "id": "CgkI-re9-Y8EEAIQAw"},
-    {"name": "Flock Master (Level 5)",       "id": "CgkI-re9-Y8EEAIQBA"}
+    {"name": "PAC-MAN: Perfect Start",       "id": "CgkIoqf0_p0EEAIQAQ"},
+    {"name": "Solitaire: First Victory",     "id": "CgkIoqf0_p0EEAIQAg"},
+    {"name": "Cricket: Quick Boundary",      "id": "CgkIoqf0_p0EEAIQAw"},
+    {"name": "Snake: Apple Hunter",          "id": "CgkIoqf0_p0EEAIQBA"},
+    {"name": "Minesweeper: Safe Step",       "id": "CgkIoqf0_p0EEAIQBQ"},
+    {"name": "Whirlybird: High Flyer",       "id": "CgkIoqf0_p0EEAIQBg"}
 ]
 
 headers = {
@@ -39,21 +46,52 @@ headers = {
     "Content-Type": "application/json"
 }
 
-print(f"\n{M}[*] গুগলে রিকোয়েস্ট পাঠানো হচ্ছে...{W}\n")
+print(f"\n{M}[*] গুগলের সাথে কানেক্ট করা হচ্ছে এবং আনলক প্রক্রিয়া শুরু হচ্ছে...{W}\n")
+time.sleep(1)
+
+unlocked_count = 0
+already_unlocked = 0
+failed_count = 0
 
 for ach in achievements:
     url = f"https://games.googleapis.com/games/v1/achievements/{ach['id']}/unlock"
-    res = requests.post(url, headers=headers)
-    
-    if res.status_code == 200:
-        print(f"{G}[✓] SUCCESS:{W} {ach['name']} ➔ +XP Added!")
-    else:
-        print(f"{R}[✗] FAILED:{W} {ach['name']} | Status: {res.status_code}")
-        print(f"{Y}   └─ গুগলের আসল মেসেজ:{W}")
-        try:
-            print(json.dumps(res.json(), indent=6))
-        except:
-            print(f"      {res.text}")
-        print("-" * 50)
-        # প্রথমটির কারণ জেনেই আমরা ব্রেক করব যাতে স্ক্রিন ভরে না যায়
-        break
+    try:
+        res = requests.post(url, headers=headers)
+        
+        if res.status_code == 200:
+            data = res.json()
+            if data.get("newlyUnlocked") == True:
+                print(f"{G}[✓] SUCCESS:{W} {ach['name']} ➔ {G}+XP Added! (Unlocked){W}")
+                unlocked_count += 1
+            else:
+                print(f"{Y}[!] ALREADY UNLOCKED:{W} {ach['name']} (আগে থেকেই করা ছিল)")
+                already_unlocked += 1
+        elif res.status_code == 401:
+            print(f"\n{R}[✗] টোকেনের মেয়াদ শেষ হয়ে গেছে! HttpCanary থেকে নতুন টোকেন নিন।{W}")
+            break
+        else:
+            print(f"{R}[✗] FAILED:{W} {ach['name']} | Status: {res.status_code}")
+            try:
+                err_msg = res.json().get('error', {}).get('message', res.text)
+                print(f"{Y}   └─ Reason: {err_msg}{W}")
+            except:
+                pass
+            failed_count += 1
+            
+    except Exception as e:
+        print(f"{R}[✗] Network Error:{W} {ach['name']}")
+        failed_count += 1
+
+    time.sleep(0.5)
+
+# ফলাফল সামারি
+print(f"\n{C}══════════════════ [ RESULT SUMMARY ] ══════════════════{W}")
+print(f"{G}নতুন আনলক হয়েছে  : {unlocked_count}{W}")
+print(f"{Y}আগে থেকেই করা ছিল : {already_unlocked}{W}")
+print(f"{R}ব্যর্থ হয়েছে       : {failed_count}{W}")
+print(f"{C}════════════════════════════════════════════════════════{W}")
+
+if unlocked_count > 0:
+    print(f"\n{M}{BOLD}🎉 অভিনন্দন! আপনার Google Play Games অ্যাপে রিফ্রেশ করে দেখুন XP বেড়ে গেছে!{W}\n")
+elif already_unlocked > 0:
+    print(f"\n{Y}[i] অ্যাচিভমেন্টগুলো আগে থেকেই আপনার অ্যাকাউন্টে আনলক করা ছিল।{W}\n")
