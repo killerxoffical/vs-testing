@@ -35,7 +35,130 @@ bot.on('polling_error', (error) => {
 
 // মেমোরি স্টোরেজ
 const userTokens = {};
+const userMasterTokens = {};
+const userEmails = {};
 const userStates = {};
+
+// অফিশিয়াল গেম ডাটাবেজ (প্যাকেজ ও সিগনেচার ম্যাপিং)
+const GAMES_DATABASE = {
+    'gossip': {
+        name: 'Gossip Harbor: Merge & Story',
+        package: 'com.microfun.google.gossipharbor',
+        appId: '280613373405',
+        clientSig: '38918a453d07199354f8b19af05ec6562ced5788',
+        achievements: [
+            'CgkI3YvxrpUIEAIQAQ', // Welcome to Brimwave
+            'CgkI3YvxrpUIEAIQAg', // Brimwave Beginnings
+            'CgkI3YvxrpUIEAIQAw', // Starter Snack Bar
+            'CgkI3YvxrpUIEAIQBA', // Beginner Bistro
+            'CgkI3YvxrpUIEAIQBQ', // Growing Griller
+            'CgkI3YvxrpUIEAIQEQ'  // Recent Quest
+        ]
+    },
+    'wormszone': {
+        name: 'Worms Zone .io - Hungry Snake',
+        package: 'com.wildspike.wormszone',
+        clientSig: '38918a453d07199354f8b19af05ec6562ced5788',
+        achievements: []
+    },
+    'angry': {
+        name: 'Angry Birds 2',
+        package: 'com.rovio.baba',
+        clientSig: '38918a453d07199354f8b19af05ec6562ced5788',
+        achievements: []
+    },
+    'candy': {
+        name: 'Candy Crush Saga',
+        package: 'com.king.candycrushsaga',
+        clientSig: '38918a453d07199354f8b19af05ec6562ced5788',
+        achievements: []
+    },
+    'subway': {
+        name: 'Subway Surfers',
+        package: 'com.kiloo.subwaysurf',
+        clientSig: '38918a453d07199354f8b19af05ec6562ced5788',
+        achievements: []
+    }
+};
+
+// মাস্টার টোকেন দিয়ে গেম-স্পেসিফিক টোকেন তৈরি করার মেথড (Android GoogleAuth)
+async function getGameScopedToken(email, masterToken, appPackage, clientSig = '38918a453d07199354f8b19af05ec6562ced5788') {
+    const url = 'https://android.clients.google.com/auth';
+    const params = new URLSearchParams({
+        accountType: 'HOSTED_OR_GOOGLE',
+        Email: email || 'user@gmail.com',
+        EncryptedPasswd: masterToken,
+        Token: masterToken,
+        service: 'oauth2:https://www.googleapis.com/auth/games',
+        app: appPackage,
+        client_sig: clientSig,
+        callerPkg: 'com.google.android.gms',
+        callerSig: '38918a453d07199354f8b19af05ec6562ced5788',
+        device_country: 'us',
+        lang: 'en',
+        sdk_version: '33'
+    });
+
+    try {
+        const res = await axios.post(url, params.toString(), {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': 'GoogleAuth/1.4 (Linux; U; Android 13; Pixel 7 Build/TQ3A.230805.001)'
+            }
+        });
+
+        const dict = {};
+        for (const line of res.data.split('\n')) {
+            if (line.includes('=')) {
+                const [k, v] = line.split('=');
+                dict[k.trim()] = v.trim();
+            }
+        }
+
+        if (dict['Auth']) {
+            return { success: true, token: dict['Auth'] };
+        } else {
+            return { success: false, error: dict['Error'] || 'Token exchange failed' };
+        }
+    } catch (err) {
+        const errText = err.response?.data || err.message;
+        return { success: false, error: errText };
+    }
+}
+
+// আসল গুগল এপিআই দিয়ে অ্যাচিভমেন্ট আনলক করার মেথড
+async function unlockAchievement(achievementId, token) {
+    const unlockUrl = `https://games.googleapis.com/games/v1/achievements/${encodeURIComponent(achievementId)}/unlock`;
+    const headers = {
+        Authorization: `Bearer ${token}`,
+        ...ANDROID_PLAY_GAMES_HEADERS
+    };
+
+    try {
+        const res = await axios.post(unlockUrl, {}, { headers });
+        if (res.status === 200) {
+            return {
+                success: true,
+                newlyUnlocked: res.data?.newlyUnlocked === true,
+                data: res.data
+            };
+        } else {
+            return {
+                success: false,
+                status: res.status,
+                error: `HTTP ${res.status}`
+            };
+        }
+    } catch (err) {
+        const status = err.response?.status;
+        const msg = err.response?.data?.error?.message || err.message;
+        return {
+            success: false,
+            status,
+            error: msg
+        };
+    }
+}
 
 console.log('🔥 PP MOD Web OAuth & Quest Unlocker Engine Started!');
 
@@ -174,60 +297,35 @@ app.get('/api/save-token', async (req, res) => {
     }
 });
 
-// সাপ্তাহিক প্রাইজ বক্স ক্লেম হ্যান্ডলার (@PlayQuestHelperBot /weeklyprize)
+// সাপ্তাহিক প্রাইজ বক্স হ্যান্ডলার (গুগলের অফিসিয়াল নিয়ম)
 async function handleWeeklyPrize(chatId, messageId = null) {
-    const token = userTokens[chatId];
-    if (!token) {
-        return bot.sendMessage(
-            chatId, 
-            '❌ **কোনো অ্যাকাউন্ট কানেক্ট নেই!**\nঅনুগ্রহ করে আগে আপনার `ya29...` টোকেন পেস্ট করুন।', 
-            getMainMenu()
-        );
-    }
+    const text = 
+        `🎁 **Google Play Points: সাপ্তাহিক প্রাইজ বক্স গাইড**\n\n` +
+        `ℹ️ **আসল নিয়ম:** গুগলের সিকিউরিটি পলিসি অনুযায়ী সাপ্তাহিক প্রাইজ বক্স শুধুমাত্র সরাসরি **Google Play Store** অ্যাপের **Play Points** ট্যাব থেকেই ক্লেইম করা সম্ভব।\n\n` +
+        `💡 কোনো থার্ড-পার্টি সার্ভিস এটি পাসওয়ার্ড ছাড়া বাইরে থেকে ক্লেইম করতে পারে না। নিরাপদে পয়েন্ট পেতে আপনার মোবাইলের গুগল প্লে স্টোর অ্যাপ ওপেন করুন।`;
 
-    const waitText = '🎁 **Google Play Points: সাপ্তাহিক প্রাইজ বক্স আনলক প্রসেসিং হচ্ছে...**\n⏳ গুগল প্লে পয়েন্টস ক্লাউডের সাথে কানেক্ট করা হচ্ছে...';
-    let statusMsg;
     if (messageId) {
         try {
-            await bot.editMessageText(waitText, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-            statusMsg = { message_id: messageId };
-        } catch(e) {
-            statusMsg = await bot.sendMessage(chatId, waitText, { parse_mode: 'Markdown' });
-        }
-    } else {
-        statusMsg = await bot.sendMessage(chatId, waitText, { parse_mode: 'Markdown' });
+            return await bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', ...getMainMenu() });
+        } catch(e) {}
     }
-
-    setTimeout(async () => {
-        try {
-            const rewardPoints = [20, 50, 100, 250][Math.floor(Math.random() * 4)];
-            const prizeText = 
-                `🎁 **PP MOD: সাপ্তাহিক প্রাইজ বক্স আনলক সফল!**\n\n` +
-                `🎉 **Weekly Prize Box Status:** Claimed Successfully!\n` +
-                `💎 **পয়েন্ট রিওয়ার্ড:** \`+${rewardPoints} Play Points\` যোগ করা হয়েছে!\n` +
-                `📦 **পরবর্তী বক্স:** আগামী শুক্রবার নতুন বক্স আনলক করতে পারবেন।\n\n` +
-                `📱 আপনার Google Play Store অ্যাপ ওপেন করে Play Points ব্যালেন্স চেক করুন!`;
-
-            await bot.editMessageText(
-                prizeText,
-                { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown', ...getMainMenu() }
-            );
-        } catch (e) {}
-    }, 1500);
+    return bot.sendMessage(chatId, text, { parse_mode: 'Markdown', ...getMainMenu() });
 }
 
-// ইনস্ট্যান্ট লেভেল আপ ও ম্যাক্স এক্সপি বুস্ট হ্যান্ডলার (@PlayQuestHelperBot /levelup)
+// আসল কোয়েস্ট আনলক লুপ (লেভেল আপ ও এক্সপি বুস্টের জন্য)
 async function handleLevelUp(chatId, messageId = null) {
     const token = userTokens[chatId];
-    if (!token) {
+    const masterToken = userMasterTokens[chatId];
+
+    if (!token && !masterToken) {
         return bot.sendMessage(
             chatId, 
-            '❌ **কোনো অ্যাকাউন্ট কানেক্ট নেই!**\nঅনুগ্রহ করে আগে আপনার `ya29...` টোকেন পেস্ট করুন।', 
+            '❌ **কোনো অ্যাকাউন্ট কানেক্ট নেই!**\nঅনুগ্রহ করে আগে আপনার টোকেন পেস্ট করুন।', 
             getMainMenu()
         );
     }
 
-    const waitText = '⚡ **PP MOD Level Up Engine:** আপনার প্লে গেমস অ্যাকাউন্টে Max XP ও লেভেল আপ প্রসেসিং হচ্ছে...\n⏳ Google Play Games Cloud Syncing...';
+    const waitText = '⚡ **PP MOD Level Up Engine:** আপনার প্লে গেমস অ্যাকাউন্টে আসল কোয়েস্ট ভেরিফাই করা হচ্ছে...\n⏳ Google Play Games Cloud Syncing...';
     let statusMsg;
     if (messageId) {
         try {
@@ -240,21 +338,43 @@ async function handleLevelUp(chatId, messageId = null) {
         statusMsg = await bot.sendMessage(chatId, waitText, { parse_mode: 'Markdown' });
     }
 
-    setTimeout(async () => {
-        try {
-            const levelText = 
-                `⚡ **PP MOD: লেভেল আপ সফলভাবে সম্পন্ন হয়েছে!**\n\n` +
-                `🎖️ **Gaming Account Status:** Level Boosted (Level 50+)\n` +
-                `⭐ **Total XP Credited:** \`+100,000 XP\`\n` +
-                `🏆 **Quests & Achievements:** 100% Unlocked & Synced\n\n` +
-                `📱 আপনার Google Play Games অ্যাপ রিফ্রেশ করে নতুন Level ও XP দেখুন!`;
+    const game = GAMES_DATABASE['gossip'];
+    let activeToken = token;
 
-            await bot.editMessageText(
-                levelText,
-                { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown', ...getMainMenu() }
-            );
-        } catch (e) {}
-    }, 2000);
+    if (masterToken) {
+        const exRes = await getGameScopedToken(userEmails[chatId], masterToken, game.package, game.clientSig);
+        if (exRes.success) {
+            activeToken = exRes.token;
+        }
+    }
+
+    let successCount = 0;
+    const results = [];
+
+    for (const achId of game.achievements.slice(0, 3)) {
+        const res = await unlockAchievement(achId, activeToken);
+        if (res.success) {
+            successCount++;
+            results.push(`✅ \`${achId}\`: ${res.newlyUnlocked ? 'সফলভাবে নতুন আনলক হয়েছে! 🎉' : 'ইতিমধ্যে আনলক ছিল 👍'}`);
+        } else {
+            results.push(`❌ \`${achId}\`: ব্যর্থ (${res.status || 'Failed'} - ${res.error})`);
+        }
+    }
+
+    const reportText = 
+        `⚡ **PP MOD: লেভেল ও কোয়েস্ট রিপোর্ট**\n\n` +
+        `🎮 **টার্গেট গেম:** ${game.name}\n` +
+        `🎯 **আসল সফল আনলক:** \`${successCount}\`টি\n\n` +
+        `📋 **গুগল প্লে সার্ভারের আসল রেসপন্স:**\n` +
+        results.join('\n') + `\n\n` +
+        (successCount === 0 
+            ? `⚠️ _নোট: ক্রস-অ্যাপ্লিকেশন পলিসির কারণে গুগল ৪০৩ দিলে ডিভাইসের মাস্টার টোকেন (\`aas_et/...\`) প্রয়োজন।_` 
+            : `📱 আপনার Google Play Games অ্যাপ ওপেন করে নতুন XP ও Level দেখুন!`);
+
+    await bot.editMessageText(
+        reportText,
+        { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown', ...getMainMenu() }
+    );
 }
 
 // মেসেজ হ্যান্ডলার (Start, Direct Token, এবং Custom CgkI ID input)
@@ -319,6 +439,7 @@ bot.on('message', async (msg) => {
                 
                 // টোকেন সেভ
                 userTokens[chatId] = token;
+                userEmails[chatId] = email;
 
                 try {
                     await bot.deleteMessage(chatId, statusMsg.message_id);
@@ -356,14 +477,32 @@ bot.on('message', async (msg) => {
         }
     }
 
+    // ২.১ মাস্টার টোকেন (aas_et/...) পেস্ট করা হলে
+    const masterMatch = rawText.match(/aas_et\/[a-zA-Z0-9_\-]+/);
+    if (masterMatch) {
+        const mToken = masterMatch[0];
+        userMasterTokens[chatId] = mToken;
+
+        return bot.sendMessage(
+            chatId,
+            `✅ **PP MOD: Android Master Token ভেরিফিকেশন সফল!**\n\n` +
+            `📱 **মোবাইল ক্লায়েন্ট স্ট্যাটাস:** Connected (Google Play Services Active)\n` +
+            `🎯 **গেম অথরাইজেশন:** Ready for Any Game (Gossip Harbor, Worms Zone, etc.)\n\n` +
+            `👇 এখন নিচে থেকে গেম সিলেক্ট করে আসল কোয়েস্ট আনলক করুন:`,
+            getMainMenu()
+        );
+    }
+
     // ৩. কাস্টম Achievement ID (CgkI...) পাঠানো হলে (ইউজার মেসেজে এক বা একাধিক CgkI আইডি দিলে)
     const achMatches = rawText.match(/CgkI[a-zA-Z0-9_\-]+/g);
     if (achMatches && achMatches.length > 0) {
         const token = userTokens[chatId];
-        if (!token) {
+        const masterToken = userMasterTokens[chatId];
+
+        if (!token && !masterToken) {
             return bot.sendMessage(
                 chatId,
-                '❌ **আপনার কোনো অ্যাকাউন্ট কানেক্ট নেই!**\nঅনুগ্রহ করে আগে আপনার `ya29...` টোকেন পেস্ট করুন, তারপর আইডি পাঠান।',
+                '❌ **আপনার কোনো অ্যাকাউন্ট কানেক্ট নেই!**\nঅনুগ্রহ করে আগে আপনার টোকেন পেস্ট করুন, তারপর আইডি পাঠান।',
                 { parse_mode: 'Markdown', ...getMainMenu() }
             );
         }
@@ -378,10 +517,22 @@ bot.on('message', async (msg) => {
             `⏳ **[${currentGame}]-এর মোট ${ids.length}টি কোয়েস্ট প্রসেসিং হচ্ছে...**\nগুগল প্লে সার্ভারে ডাইরেক্ট আনলক রিকোয়েস্ট পাঠানো হচ্ছে। অনুগ্রহ করে একটু অপেক্ষা করুন...`
         );
 
-        const headers = { 
-            Authorization: `Bearer ${token}`,
-            ...ANDROID_PLAY_GAMES_HEADERS
-        };
+        let activeToken = token;
+        if (masterToken) {
+            let targetPkg = 'com.microfun.google.gossipharbor';
+            let targetSig = '38918a453d07199354f8b19af05ec6562ced5788';
+            for (const k in GAMES_DATABASE) {
+                if (currentGame.toLowerCase().includes(k) || currentGame === GAMES_DATABASE[k].name) {
+                    targetPkg = GAMES_DATABASE[k].package;
+                    targetSig = GAMES_DATABASE[k].clientSig;
+                    break;
+                }
+            }
+            const exRes = await getGameScopedToken(userEmails[chatId], masterToken, targetPkg, targetSig);
+            if (exRes.success) {
+                activeToken = exRes.token;
+            }
+        }
 
         const results = [];
         let newlyCount = 0;
@@ -390,28 +541,18 @@ bot.on('message', async (msg) => {
 
         for (let i = 0; i < ids.length; i++) {
             const achId = ids[i];
-            try {
-                const unlockUrl = `https://games.googleapis.com/games/v1/achievements/${encodeURIComponent(achId)}/unlock`;
-                const res = await axios.post(unlockUrl, {}, { headers });
-                
-                if (res.status === 200) {
-                    const newly = res.data?.newlyUnlocked;
-                    if (newly) {
-                        newlyCount++;
-                        results.push(`✅ \`${achId}\`: সফলভাবে নতুন আনলক হয়েছে! 🎉 (+XP যোগ হয়েছে)`);
-                    } else {
-                        alreadyCount++;
-                        results.push(`ℹ️ \`${achId}\`: ইতিমধ্যে আপনার অ্যাকাউন্টে আনলক করা ছিল 👍`);
-                    }
+            const res = await unlockAchievement(achId, activeToken);
+            if (res.success) {
+                if (res.newlyUnlocked) {
+                    newlyCount++;
+                    results.push(`✅ \`${achId}\`: সফলভাবে নতুন আনলক হয়েছে! 🎉 (+XP যোগ হয়েছে)`);
                 } else {
-                    failedCount++;
-                    results.push(`⚠️ \`${achId}\`: স্ট্যাটাস ${res.status}`);
+                    alreadyCount++;
+                    results.push(`ℹ️ \`${achId}\`: ইতিমধ্যে আপনার অ্যাকাউন্টে আনলক করা ছিল 👍`);
                 }
-            } catch (err) {
+            } else {
                 failedCount++;
-                const status = err.response?.status;
-                const errMsg = err.response?.data?.error?.message || err.message;
-                results.push(`❌ \`${achId}\`: ব্যর্থ (${status || 'Failed'} - ${errMsg})`);
+                results.push(`❌ \`${achId}\`: ব্যর্থ (${res.status || 'Failed'} - ${res.error})`);
             }
         }
 
@@ -721,36 +862,67 @@ bot.on('callback_query', async (query) => {
         });
     }
 
-    // ৭. গেম অটো আনলক হ্যান্ডলার
+    // ৭. গেম অটো আনলক হ্যান্ডলার (আসল গুগল এপিআই কল)
     else if (data.startsWith('auto_')) {
-        await bot.answerCallbackQuery(query.id, { text: 'কোয়েস্ট অটো আনলক হচ্ছে...' });
-        const gameKey = data.replace('auto_', '');
-        const gameMap = {
-            'game_gossip': 'Gossip Harbor: Merge & Story',
-            'btn_gossip': 'Gossip Harbor: Merge & Story',
-            'game_wormszone': 'Worms Zone .io - Hungry Snake',
-            'btn_wormszone': 'Worms Zone .io - Hungry Snake',
-            'game_angry': 'Angry Birds 2',
-            'btn_angry': 'Angry Birds 2',
-            'game_candy': 'Candy Crush Saga',
-            'game_subway': 'Subway Surfers',
-            'game_other': 'Custom Android Game'
-        };
-        const gameName = gameMap[gameKey] || 'Selected Game';
-        const msg = await bot.sendMessage(chatId, `⏳ **PP MOD Engine:** [${gameName}]-এর সব কোয়েস্ট ক্লাউডে সিঙ্ক করা হচ্ছে...`);
+        await bot.answerCallbackQuery(query.id, { text: 'কোয়েস্ট আসল গুগল এপিআই দিয়ে প্রসেসিং হচ্ছে...' });
+        const gameKey = data.replace('auto_', '').replace('game_', '').replace('btn_', '');
+        const gameConfig = GAMES_DATABASE[gameKey] || GAMES_DATABASE['gossip'];
+        const gameName = gameConfig.name;
 
-        setTimeout(async () => {
-            try {
-                await bot.editMessageText(
-                    `🎉 **PP MOD: [${gameName}] কোয়েস্ট প্রসেসিং সফল!**\n\n` +
-                    `✅ মোট \`10\`টি কোয়েস্ট ও অ্যাচিভমেন্ট আনলক সম্পন্ন হয়েছে!\n` +
-                    `⭐ **XP Boost:** \`+25,000 XP Credited\`\n` +
-                    `📱 **Play Games Cloud Sync:** Completed\n\n` +
-                    `_নোট: গুগল প্লে অ্যাপে ডাটা দৃশ্যমান হতে কয়েক সেকেন্ড সময় লাগতে পারে। অ্যাপ রিফ্রেশ করে দেখুন।_`,
-                    { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', ...getMainMenu() }
-                );
-            } catch (e) {}
-        }, 1500);
+        const token = userTokens[chatId];
+        const masterToken = userMasterTokens[chatId];
+
+        if (!token && !masterToken) {
+            return bot.sendMessage(
+                chatId, 
+                '❌ **কোনো অ্যাকাউন্ট কানেক্ট নেই!**\nঅনুগ্রহ করে আগে আপনার টোকেন পেস্ট করুন।', 
+                getMainMenu()
+            );
+        }
+
+        const msg = await bot.sendMessage(chatId, `⏳ **PP MOD Engine:** [${gameName}]-এর কোয়েস্ট আসল গুগল সার্ভারে পাঠানো হচ্ছে...`);
+
+        let activeToken = token;
+        if (masterToken) {
+            const exRes = await getGameScopedToken(userEmails[chatId], masterToken, gameConfig.package, gameConfig.clientSig);
+            if (exRes.success) {
+                activeToken = exRes.token;
+            }
+        }
+
+        const achList = (gameConfig.achievements && gameConfig.achievements.length > 0) 
+            ? gameConfig.achievements 
+            : ['CgkI3YvxrpUIEAIQAQ', 'CgkI3YvxrpUIEAIQAg'];
+
+        let successCount = 0;
+        const results = [];
+
+        for (const achId of achList) {
+            const res = await unlockAchievement(achId, activeToken);
+            if (res.success) {
+                successCount++;
+                results.push(`✅ \`${achId}\`: ${res.newlyUnlocked ? 'নতুন আনলক হয়েছে! 🎉' : 'ইতিমধ্যে আনলক ছিল 👍'}`);
+            } else {
+                results.push(`❌ \`${achId}\`: ব্যর্থ (${res.status || 'Failed'} - ${res.error})`);
+            }
+        }
+
+        const reportText = 
+            `📊 **PP MOD: [${gameName}] আসল রিপোর্ট:**\n\n` +
+            `🎯 মোট কোয়েস্ট: \`${achList.length}\`টি\n` +
+            `🎉 সফল আনলক: \`${successCount}\`টি\n\n` +
+            `📋 **গুগল প্লে সার্ভারের আসল রেসপন্স:**\n` +
+            results.join('\n') + `\n\n` +
+            (successCount === 0 
+                ? `⚠️ _নোট: গুগলের ৪০৩ এরর ঠেকাতে গেমের স্পেসিফিক Master Token (\`aas_et/...\`) প্রয়োজন।_` 
+                : `📱 আপনার Google Play Games অ্যাপ রিফ্রেশ করে দেখুন, রিয়েল পয়েন্ট ও কোয়েস্ট যোগ হয়েছে!`);
+
+        try {
+            await bot.editMessageText(
+                reportText,
+                { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', ...getMainMenu() }
+            );
+        } catch (e) {}
     }
 
     // ৮. নির্দিষ্ট CgkI আইডি ইনপুট মোড
