@@ -1,83 +1,60 @@
+import telebot
 import requests
 import time
-import sys
-import json
 
-VERSION = "v3.2.0 [PROFILE-VERIFIER]"
+# --- আপনার BotFather থেকে পাওয়া বটের টোকেন এখানে বসান ---
+BOT_TOKEN = "8653938577:AAE1g-TDAedxbpGvszb0zRyVa04560mba0c"
 
-# কালার কোডস
-G = '\033[92m'  # Green
-R = '\033[91m'  # Red
-Y = '\033[93m'  # Yellow
-C = '\033[96m'  # Cyan
-M = '\033[95m'  # Magenta
-W = '\033[0m'   # Reset
-BOLD = '\033[1m'
+bot = telebot.TeleBot(BOT_TOKEN)
 
-print(f"""{C}{BOLD}
-╔═══════════════════════════════════════════════════╗
-║     ⚡ GOOGLE PLAY GAMES ACCOUNT VERIFIER ⚡     ║
-║            Version: {M}{VERSION}{C}          ║
-╚═══════════════════════════════════════════════════╝{W}""")
+print("⚡ টেলিগ্রাম বট চালু হয়েছে! আপনার বটে মেসেজ দিয়ে টেস্ট করুন...")
 
-print(f"{Y}[?] আপনার একদম টাটকা/নতুন ya29... টোকেনটি দিন:{W}")
-token = input(f"{BOLD}{C}Token > {W}").strip()
+# ১. /start কমান্ড হ্যান্ডলার
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    welcome_text = (
+        f"👋 হ্যালো {message.from_user.first_name}!\n\n"
+        "🎮 **GPGS Auto Quest & Achievement Unlocker Bot**-এ আপনাকে স্বাগতম!\n\n"
+        "গুগল প্লে গেমসের অ্যাচিভমেন্ট আনলক করতে আপনার গুগল **Access Token (ya29...)** টি এখানে পেস্ট করে পাঠান।"
+    )
+    bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
-if not token or not token.startswith("ya29."):
-    print(f"\n{R}[✗] অবৈধ টোকেন! টোকেনটি অবশ্যই 'ya29.' দিয়ে শুরু হতে হবে।{W}")
-    sys.exit()
+# ২. ইউজারের পাঠানো টোকেন রিসিভ ও ভেরিফাই
+@bot.message_handler(func=lambda message: True)
+def handle_token(message):
+    token = message.text.strip()
+    
+    # টোকেন ফরম্যাট চেক
+    if not token.startswith("ya29."):
+        bot.reply_to(message, "❌ ভুল ফরম্যাট! টোকেনটি অবশ্যই `ya29.` দিয়ে শুরু হতে হবে।", parse_mode="Markdown")
+        return
+    
+    status_msg = bot.reply_to(message, "⏳ গুগলের সার্ভার ভেরিফাই করা হচ্ছে...")
+    
+    # গুগলের সাথে টোকেন চেক
+    check_url = f"https://oauth2.googleapis.com/tokeninfo?access_token={token}"
+    res = requests.get(check_url)
+    
+    if res.status_code == 200:
+        data = res.json()
+        expires_in = int(data.get("expires_in", 0)) // 60
+        scope = data.get("scope", "N/A")
+        
+        reply = (
+            "✅ **টোকেন ভেরিফিকেশন সফল হয়েছে!**\n\n"
+            f"🔑 **Authorized Scope:** `{scope}`\n"
+            f"⏳ **মেয়াদ বাকি আছে:** `{expires_in} মিনিট`\n"
+            f"🌐 **সার্ভার স্ট্যাটাস:** Connected (Google Cloud)\n\n"
+            "🎮 এবার আপনি কোন গেমের কোয়েস্ট আনলক করতে চান সিলেক্ট করুন!"
+        )
+        bot.edit_message_text(reply, chat_id=message.chat.id, message_id=status_msg.message_id, parse_mode="Markdown")
+    else:
+        bot.edit_message_text(
+            "❌ **টোকেনটি অবৈধ বা মেয়াদ শেষ (Expired)!**\nঅনুগ্রহ করে একটি নতুন সচল টোকেন দিন।",
+            chat_id=message.chat.id,
+            message_id=status_msg.message_id,
+            parse_mode="Markdown"
+        )
 
-headers = {
-    "Authorization": f"Bearer {token}",
-    "Content-Type": "application/json"
-}
-
-print(f"\n{M}[*] গুগল সার্ভার থেকে প্রোফাইল ডাটা আনা হচ্ছে...{W}\n")
-time.sleep(1)
-
-# ১. সরাসরি ইউজারের গুগল প্লে গেমস প্রোফাইল ডাটা আনা
-profile_url = "https://games.googleapis.com/games/v1/players/me"
-res = requests.get(profile_url, headers=headers)
-
-if res.status_code == 401:
-    print(f"{R}{BOLD}[✗] টোকেনের মেয়াদ শেষ (Expired) অথবা ভুল টোকেন! (Status: 401){W}")
-    print(f"{Y}[i] অনুগ্রহ করে নতুন করে লগইন করে একদম টাটকা টোকেন কপি করুন।{W}\n")
-    sys.exit()
-elif res.status_code != 200:
-    print(f"{R}[✗] অ্যাকাউন্ট কানেক্ট হয়নি! Error: {res.status_code}{W}")
-    print(res.text)
-    sys.exit()
-
-profile = res.json()
-name = profile.get("displayName", "Unknown")
-player_id = profile.get("playerId", "Unknown")
-exp_info = profile.get("experienceInfo", {})
-current_level = exp_info.get("currentLevel", {}).get("level", "N/A")
-current_xp = exp_info.get("currentExperiencePoints", "0")
-
-# সুন্দর করে স্ক্রিনে প্রোফাইল প্রিন্ট করা
-print(f"""{G}{BOLD}
-╔════════════════ [ ACCOUNT LOGGED IN ] ════════════════╗
-  👤 Gamer Name : {W}{name}{G}
-  🆔 Player ID   : {W}{player_id}{G}
-  🎖️ Current Level: {Y}{current_level}{G}
-  ⭐ Current XP   : {Y}{current_xp} XP{G}
-╚═══════════════════════════════════════════════════════╝{W}""")
-
-print(f"\n{C}[✓] আপনার গুগল অ্যাকাউন্ট সফলভাবে কানেক্ট হয়েছে!{W}")
-print(f"{M}[*] এবার অ্যাচিভমেন্ট আনলক করার চেষ্টা করা হচ্ছে...{W}\n")
-time.sleep(1)
-
-# ডেমো আনলক চেষ্টা
-demo_ach = "CgkIoqf0_p0EEAIQAQ"
-unlock_url = f"https://games.googleapis.com/games/v1/achievements/{demo_ach}/unlock"
-unlock_res = requests.post(unlock_url, headers=headers)
-
-if unlock_res.status_code == 200:
-    print(f"{G}{BOLD}[✓] STATUS 200 OK: অ্যাচিভমেন্ট আনলক হয়েছে এবং নতুন XP যোগ হয়েছে!{W}\n")
-else:
-    print(f"{Y}[i] Unlock Status: {unlock_res.status_code}{W}")
-    try:
-        print(f"   Reason: {unlock_res.json().get('error', {}).get('message')}\n")
-    except:
-        pass
+# বট অনন্তকাল চালু রাখার লুপ
+bot.infinity_polling()
