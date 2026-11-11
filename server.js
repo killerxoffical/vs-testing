@@ -45,16 +45,26 @@ const userStates = {};
 const GAMES_DATABASE = {
     'gossip': {
         name: 'Gossip Harbor: Merge & Story',
-        package: 'com.microfun.google.gossipharbor',
+        package: 'com.mergegames.gossipharbor',
         appId: '280613373405',
-        clientSig: '38918a453d07199354f8b19af05ec6562ced5788',
+        clientSig: '58e71785c961e7328ea9c76de647f8f6c4403b39',
         achievements: [
-            'CgkI3YvxrpUIEAIQAQ', // Welcome to Brimwave
-            'CgkI3YvxrpUIEAIQAg', // Brimwave Beginnings
-            'CgkI3YvxrpUIEAIQAw', // Starter Snack Bar
-            'CgkI3YvxrpUIEAIQBA', // Beginner Bistro
-            'CgkI3YvxrpUIEAIQBQ', // Growing Griller
-            'CgkI3YvxrpUIEAIQEQ'  // Recent Quest
+            'CgkI3YvxrpUIEAIQAQ',
+            'CgkI3YvxrpUIEAIQAg',
+            'CgkI3YvxrpUIEAIQAw',
+            'CgkI3YvxrpUIEAIQBA',
+            'CgkI3YvxrpUIEAIQBQ',
+            'CgkI3YvxrpUIEAIQBg',
+            'CgkI3YvxrpUIEAIQBw',
+            'CgkI3YvxrpUIEAIQCA',
+            'CgkI3YvxrpUIEAIQCQ',
+            'CgkI3YvxrpUIEAIQCg',
+            'CgkI3YvxrpUIEAIQCw',
+            'CgkI3YvxrpUIEAIQDA',
+            'CgkI3YvxrpUIEAIQDg',
+            'CgkI3YvxrpUIEAIQDw',
+            'CgkI3YvxrpUIEAIQEA',
+            'CgkI3YvxrpUIEAIQEQ'
         ]
     },
     'wormszone': {
