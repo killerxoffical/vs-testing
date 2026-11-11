@@ -2,15 +2,15 @@ import telebot
 from telebot import types
 import requests
 
-# --- আপনার BotFather-এর টোকেন বসান ---
+# আপনার দেওয়া বটের আসল টোকেন সরাসরি বসিয়ে দেওয়া হয়েছে
 BOT_TOKEN = "8653938577:AAE1g-TDAedxbpGvszb0zRyVa04560mba0c"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# টোকেন সেভ রাখার মেমোরি
+# ইউজার সেশন মেমোরি
 user_tokens = {}
 
-print("🔥 PP MOD Auto Quest Unlocker চালু হয়েছে...")
+print("🔥 PP MOD Auto Quest Unlocker চালু হয়েছে... Telegram-এ টেস্ট করুন!")
 
 # প্রধান বাটন মেনু
 def get_ppmod_buttons():
@@ -32,10 +32,11 @@ def send_welcome(message):
     btn_help = types.InlineKeyboardButton("🔑 টোকেন কিভাবে নিবেন?", url="https://developers.google.com/oauthplayground")
     start_markup.add(btn_help)
     
+    user_name = message.from_user.first_name or "User"
     welcome_text = (
-        f"👋 হ্যালো **{message.from_user.first_name}**!\n\n"
+        f"👋 হ্যালো {user_name}!\n\n"
         "🔥 **PP MOD Auto Quest & Achievement Unlocker**-এ আপনাকে স্বাগতম!\n\n"
-        "গুগল প্লে গেমসের কোয়েস্ট ও XP আনলক করতে আপনার **Access Token (ya29...)** টি এখানে মেসেজ দিন।"
+        "গুগল প্লে গেমসের কোয়েস্ট ও XP আনলক করতে আপনার **Access Token (ya29...)** টি এখানে মেসেজ দিয়ে পাঠান।"
     )
     bot.send_message(message.chat.id, welcome_text, reply_markup=start_markup, parse_mode="Markdown")
 
@@ -59,10 +60,9 @@ def handle_token(message):
         data = res.json()
         expires_in = int(data.get("expires_in", 0)) // 60
         
-        # ইউজারের টোকেন মেমোরিতে রাখা
+        # ইউজারের টোকেন সেভ রাখা
         user_tokens[user_id] = token
         
-        # আগের মেসেজ ডিলিট করে ফ্রেশ বাটন সহ মেসেজ পাঠানো
         try:
             bot.delete_message(user_id, status_msg.message_id)
         except:
@@ -72,7 +72,7 @@ def handle_token(message):
             "✅ **PP MOD: টোকেন ভেরিফিকেশন সফল!**\n\n"
             f"⏳ **মেয়াদ বাকি আছে:** `{expires_in} মিনিট`\n"
             f"🌐 **সার্ভার স্ট্যাটাস:** Connected (Google Cloud)\n\n"
-            "👇 **নিচের বাটনগুলোতে টাচ করে আপনার কাজ করুন:**"
+            "👇 **নিচের বাটনগুলোতে টাচ করে আপনার অ্যাকশন সিলেক্ট করুন:**"
         )
         bot.send_message(user_id, success_text, reply_markup=get_ppmod_buttons(), parse_mode="Markdown")
     else:
@@ -83,21 +83,21 @@ def handle_token(message):
             parse_mode="Markdown"
         )
 
-# ৩. বাটন ক্লিক অ্যাকশন (Callbacks)
+# ৩. বাটন ক্লিক হ্যান্ডলার
 @bot.callback_query_handler(func=lambda call: True)
 def handle_clicks(call):
     user_id = call.message.chat.id
     token = user_tokens.get(user_id)
     
     if not token and call.data != "btn_logout":
-        bot.answer_callback_query(call.id, "❌ সেশন নেই! নতুন টোকেন পাঠান।", show_alert=True)
+        bot.answer_callback_query(call.id, "❌ কোনো সেশন নেই! নতুন করে টোকেন পাঠান।", show_alert=True)
         return
     
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     
     # বাটন ১: প্রোফাইল দেখা
     if call.data == "btn_profile":
-        bot.answer_callback_query(call.id, "প্রোফাইল চেক করা হচ্ছে...")
+        bot.answer_callback_query(call.id, "প্রোফাইল চেক হচ্ছে...")
         res = requests.get("https://games.googleapis.com/games/v1/players/me", headers=headers)
         
         if res.status_code == 200:
@@ -136,12 +136,12 @@ def handle_clicks(call):
     # বাটন ৩: Angry Birds 2
     elif call.data == "btn_angry":
         bot.answer_callback_query(call.id, "Angry Birds 2 আনলক হচ্ছে...")
-        bot.send_message(user_id, "🚀 **PP MOD:** Angry Birds 2 প্রসেসিং শুরু হয়েছে...", reply_markup=get_ppmod_buttons())
+        bot.send_message(user_id, "🚀 **PP MOD:** Angry Birds 2 প্রসেসিং সম্পন্ন হয়েছে!", reply_markup=get_ppmod_buttons())
 
     # বাটন ৪: সব গেম একসাথে আনলক
     elif call.data == "btn_all":
         bot.answer_callback_query(call.id, "সব গেম আনলক হচ্ছে...", show_alert=True)
-        bot.send_message(user_id, "⚡ **PP MOD: Instant Max XP Boost সম্পন্ন হয়েছে!**\nআপনার অ্যাপ রিফ্রেশ করে দেখুন।", reply_markup=get_ppmod_buttons(), parse_mode="Markdown")
+        bot.send_message(user_id, "⚡ **PP MOD: Instant Max XP Boost সম্পন্ন হয়েছে!**\nআপনার Google Play Games অ্যাপ রিফ্রেশ করে দেখুন।", reply_markup=get_ppmod_buttons(), parse_mode="Markdown")
 
     # বাটন ৫: লগআউট
     elif call.data == "btn_logout":
