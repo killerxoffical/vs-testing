@@ -160,6 +160,36 @@ async function unlockAchievement(achievementId, token) {
     }
 }
 
+// টেলিগ্রাম মেসেজ এডিট/সেন্ড করার ১০০% নিরাপদ ফাংশন (কখনো আটকে থাকবে না)
+async function safeEditMessage(chatId, messageId, text, options = {}) {
+    try {
+        return await bot.editMessageText(text, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+            ...options
+        });
+    } catch (errHtml) {
+        console.error('[safeEditMessage] HTML failed, falling back to plain text:', errHtml.message);
+        const plainText = text.replace(/<[^>]*>/g, '');
+        try {
+            return await bot.editMessageText(plainText, {
+                chat_id: chatId,
+                message_id: messageId,
+                disable_web_page_preview: true,
+                ...options
+            });
+        } catch (errPlain) {
+            console.error('[safeEditMessage] Plain edit failed, sending new message:', errPlain.message);
+            return await bot.sendMessage(chatId, plainText, {
+                disable_web_page_preview: true,
+                ...options
+            });
+        }
+    }
+}
+
 console.log('🔥 PP MOD Web OAuth & Quest Unlocker Engine Started!');
 
 // প্রধান মেনু বাটন (@PlayQuestHelperBot স্টাইল)
@@ -300,16 +330,14 @@ app.get('/api/save-token', async (req, res) => {
 // সাপ্তাহিক প্রাইজ বক্স হ্যান্ডলার (গুগলের অফিসিয়াল নিয়ম)
 async function handleWeeklyPrize(chatId, messageId = null) {
     const text = 
-        `🎁 **Google Play Points: সাপ্তাহিক প্রাইজ বক্স গাইড**\n\n` +
-        `ℹ️ **আসল নিয়ম:** গুগলের সিকিউরিটি পলিসি অনুযায়ী সাপ্তাহিক প্রাইজ বক্স শুধুমাত্র সরাসরি **Google Play Store** অ্যাপের **Play Points** ট্যাব থেকেই ক্লেইম করা সম্ভব।\n\n` +
+        `🎁 <b>Google Play Points: সাপ্তাহিক প্রাইজ বক্স গাইড</b>\n\n` +
+        `ℹ️ <b>আসল নিয়ম:</b> গুগলের সিকিউরিটি পলিসি অনুযায়ী সাপ্তাহিক প্রাইজ বক্স শুধুমাত্র সরাসরি <b>Google Play Store</b> অ্যাপের <b>Play Points</b> ট্যাব থেকেই ক্লেইম করা সম্ভব।\n\n` +
         `💡 কোনো থার্ড-পার্টি সার্ভিস এটি পাসওয়ার্ড ছাড়া বাইরে থেকে ক্লেইম করতে পারে না। নিরাপদে পয়েন্ট পেতে আপনার মোবাইলের গুগল প্লে স্টোর অ্যাপ ওপেন করুন।`;
 
     if (messageId) {
-        try {
-            return await bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', ...getMainMenu() });
-        } catch(e) {}
+        return safeEditMessage(chatId, messageId, text, getMainMenu());
     }
-    return bot.sendMessage(chatId, text, { parse_mode: 'Markdown', ...getMainMenu() });
+    return bot.sendMessage(chatId, text, { parse_mode: 'HTML', ...getMainMenu() });
 }
 
 // আসল কোয়েস্ট আনলক লুপ (লেভেল আপ ও এক্সপি বুস্টের জন্য)
@@ -320,22 +348,22 @@ async function handleLevelUp(chatId, messageId = null) {
     if (!token && !masterToken) {
         return bot.sendMessage(
             chatId, 
-            '❌ **কোনো অ্যাকাউন্ট কানেক্ট নেই!**\nঅনুগ্রহ করে আগে আপনার টোকেন পেস্ট করুন।', 
-            getMainMenu()
+            '❌ <b>কোনো অ্যাকাউন্ট কানেক্ট নেই!</b>\nঅনুগ্রহ করে আগে আপনার টোকেন পেস্ট করুন।', 
+            { parse_mode: 'HTML', ...getMainMenu() }
         );
     }
 
-    const waitText = '⚡ **PP MOD Level Up Engine:** আপনার প্লে গেমস অ্যাকাউন্টে আসল কোয়েস্ট ভেরিফাই করা হচ্ছে...\n⏳ Google Play Games Cloud Syncing...';
+    const waitText = '⚡ <b>PP MOD Level Up Engine:</b> আপনার প্লে গেমস অ্যাকাউন্টে আসল কোয়েস্ট ভেরিফাই করা হচ্ছে...\n⏳ Google Play Games Cloud Syncing...';
     let statusMsg;
     if (messageId) {
         try {
-            await bot.editMessageText(waitText, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+            await bot.editMessageText(waitText, { chat_id: chatId, message_id: messageId, parse_mode: 'HTML' });
             statusMsg = { message_id: messageId };
         } catch(e) {
-            statusMsg = await bot.sendMessage(chatId, waitText, { parse_mode: 'Markdown' });
+            statusMsg = await bot.sendMessage(chatId, waitText, { parse_mode: 'HTML' });
         }
     } else {
-        statusMsg = await bot.sendMessage(chatId, waitText, { parse_mode: 'Markdown' });
+        statusMsg = await bot.sendMessage(chatId, waitText, { parse_mode: 'HTML' });
     }
 
     const game = GAMES_DATABASE['gossip'];
@@ -355,26 +383,23 @@ async function handleLevelUp(chatId, messageId = null) {
         const res = await unlockAchievement(achId, activeToken);
         if (res.success) {
             successCount++;
-            results.push(`✅ \`${achId}\`: ${res.newlyUnlocked ? 'সফলভাবে নতুন আনলক হয়েছে! 🎉' : 'ইতিমধ্যে আনলক ছিল 👍'}`);
+            results.push(`✅ <code>${achId}</code>: ${res.newlyUnlocked ? 'নতুন আনলক হয়েছে! 🎉' : 'ইতিমধ্যে আনলক ছিল 👍'}`);
         } else {
-            results.push(`❌ \`${achId}\`: ব্যর্থ (${res.status || 'Failed'} - ${res.error})`);
+            results.push(`❌ <code>${achId}</code>: ব্যর্থ (${res.status || 'Failed'} - ${res.error})`);
         }
     }
 
     const reportText = 
-        `⚡ **PP MOD: লেভেল ও কোয়েস্ট রিপোর্ট**\n\n` +
-        `🎮 **টার্গেট গেম:** ${game.name}\n` +
-        `🎯 **আসল সফল আনলক:** \`${successCount}\`টি\n\n` +
-        `📋 **গুগল প্লে সার্ভারের আসল রেসপন্স:**\n` +
+        `⚡ <b>PP MOD: লেভেল ও কোয়েস্ট রিপোর্ট</b>\n\n` +
+        `🎮 <b>টার্গেট গেম:</b> ${game.name}\n` +
+        `🎯 <b>আসল সফল আনলক:</b> <b>${successCount}</b>টি\n\n` +
+        `📋 <b>গুগল প্লে সার্ভারের আসল রেসপন্স:</b>\n` +
         results.join('\n') + `\n\n` +
         (successCount === 0 
-            ? `⚠️ _নোট: ক্রস-অ্যাপ্লিকেশন পলিসির কারণে গুগল ৪০৩ দিলে ডিভাইসের মাস্টার টোকেন (\`aas_et/...\`) প্রয়োজন।_` 
-            : `📱 আপনার Google Play Games অ্যাপ ওপেন করে নতুন XP ও Level দেখুন!`);
+            ? `⚠️ <i>নোট: ক্রস-অ্যাপ্লিকেশন পলিসির কারণে গুগল ৪০৩ দিলে ডিভাইসের মাস্টার টোকেন (aas_et/...) প্রয়োজন।</i>` 
+            : `📱 <b>আপনার Google Play Games অ্যাপ ওপেন করে নতুন XP ও Level দেখুন!</b>`);
 
-    await bot.editMessageText(
-        reportText,
-        { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown', ...getMainMenu() }
-    );
+    await safeEditMessage(chatId, statusMsg.message_id, reportText, getMainMenu());
 }
 
 // মেসেজ হ্যান্ডলার (Start, Direct Token, এবং Custom CgkI ID input)
@@ -866,8 +891,8 @@ bot.on('callback_query', async (query) => {
     else if (data.startsWith('auto_')) {
         await bot.answerCallbackQuery(query.id, { text: 'কোয়েস্ট আসল গুগল এপিআই দিয়ে প্রসেসিং হচ্ছে...' });
         const gameKey = data.replace('auto_', '').replace('game_', '').replace('btn_', '');
-        const gameConfig = GAMES_DATABASE[gameKey] || GAMES_DATABASE['gossip'];
-        const gameName = gameConfig.name;
+        const gameConfig = GAMES_DATABASE[gameKey];
+        const gameName = gameConfig ? gameConfig.name : 'Selected Game';
 
         const token = userTokens[chatId];
         const masterToken = userMasterTokens[chatId];
@@ -875,12 +900,29 @@ bot.on('callback_query', async (query) => {
         if (!token && !masterToken) {
             return bot.sendMessage(
                 chatId, 
-                '❌ **কোনো অ্যাকাউন্ট কানেক্ট নেই!**\nঅনুগ্রহ করে আগে আপনার টোকেন পেস্ট করুন।', 
-                getMainMenu()
+                '❌ <b>কোনো অ্যাকাউন্ট কানেক্ট নেই!</b>\nঅনুগ্রহ করে আগে আপনার টোকেন পেস্ট করুন।', 
+                { parse_mode: 'HTML', ...getMainMenu() }
             );
         }
 
-        const msg = await bot.sendMessage(chatId, `⏳ **PP MOD Engine:** [${gameName}]-এর কোয়েস্ট আসল গুগল সার্ভারে পাঠানো হচ্ছে...`);
+        const msg = await bot.sendMessage(chatId, `⏳ <b>PP MOD Engine:</b> [${gameName}]-এর কোয়েস্ট আসল গুগল সার্ভারে পাঠানো হচ্ছে...`, { parse_mode: 'HTML' });
+
+        // যদি এই গেমের জন্য এখনো আইডি ডাটাবেজে না থাকে (যেমন Subway Surfers)
+        if (!gameConfig || !gameConfig.achievements || gameConfig.achievements.length === 0) {
+            const noAchText = 
+                `⚠️ <b>[${gameName}]-এর অটো কোয়েস্ট আইডি এখনো ডাটাবেজে নেই!</b>\n\n` +
+                `👉 এই গেমের কোয়েস্ট আনলক করতে নিচের <b>"✏️ নির্দিষ্ট CgkI আইডি টাইপ করুন"</b> বাটনে চাপ দিয়ে ওই গেমের CgkI কোয়েস্ট আইডি চ্যাটে লিখে পাঠিয়ে দিন।`;
+
+            return safeEditMessage(chatId, msg.message_id, noAchText, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "✏️ নির্দিষ্ট CgkI আইডি টাইপ করুন", callback_data: `input_game_${gameKey}` }],
+                        [{ text: "🔍 CgkI আইডি কীভাবে বের করবেন?", callback_data: "btn_how_to_get_ids" }],
+                        [{ text: "🔙 গেম তালিকা", callback_data: "btn_game_menu" }]
+                    ]
+                }
+            });
+        }
 
         let activeToken = token;
         if (masterToken) {
@@ -890,10 +932,7 @@ bot.on('callback_query', async (query) => {
             }
         }
 
-        const achList = (gameConfig.achievements && gameConfig.achievements.length > 0) 
-            ? gameConfig.achievements 
-            : ['CgkI3YvxrpUIEAIQAQ', 'CgkI3YvxrpUIEAIQAg'];
-
+        const achList = gameConfig.achievements;
         let successCount = 0;
         const results = [];
 
@@ -901,28 +940,23 @@ bot.on('callback_query', async (query) => {
             const res = await unlockAchievement(achId, activeToken);
             if (res.success) {
                 successCount++;
-                results.push(`✅ \`${achId}\`: ${res.newlyUnlocked ? 'নতুন আনলক হয়েছে! 🎉' : 'ইতিমধ্যে আনলক ছিল 👍'}`);
+                results.push(`✅ <code>${achId}</code>: ${res.newlyUnlocked ? 'নতুন আনলক হয়েছে! 🎉' : 'ইতিমধ্যে আনলক ছিল 👍'}`);
             } else {
-                results.push(`❌ \`${achId}\`: ব্যর্থ (${res.status || 'Failed'} - ${res.error})`);
+                results.push(`❌ <code>${achId}</code>: ব্যর্থ (${res.status || 'Failed'} - ${res.error})`);
             }
         }
 
         const reportText = 
-            `📊 **PP MOD: [${gameName}] আসল রিপোর্ট:**\n\n` +
-            `🎯 মোট কোয়েস্ট: \`${achList.length}\`টি\n` +
-            `🎉 সফল আনলক: \`${successCount}\`টি\n\n` +
-            `📋 **গুগল প্লে সার্ভারের আসল রেসপন্স:**\n` +
+            `📊 <b>PP MOD: [${gameName}] আসল রিপোর্ট:</b>\n\n` +
+            `🎯 মোট কোয়েস্ট: <b>${achList.length}</b>টি\n` +
+            `🎉 সফল আনলক: <b>${successCount}</b>টি\n\n` +
+            `📋 <b>গুগল প্লে সার্ভারের আসল রেসপন্স:</b>\n` +
             results.join('\n') + `\n\n` +
             (successCount === 0 
-                ? `⚠️ _নোট: গুগলের ৪০৩ এরর ঠেকাতে গেমের স্পেসিফিক Master Token (\`aas_et/...\`) প্রয়োজন।_` 
-                : `📱 আপনার Google Play Games অ্যাপ রিফ্রেশ করে দেখুন, রিয়েল পয়েন্ট ও কোয়েস্ট যোগ হয়েছে!`);
+                ? `⚠️ <i>নোট: গুগলের ৪০৩ এরর ঠেকাতে গেমের স্পেসিফিক Master Token (aas_et/...) প্রয়োজন।</i>` 
+                : `📱 <b>আপনার Google Play Games অ্যাপ রিফ্রেশ করে দেখুন, রিয়েল পয়েন্ট ও কোয়েস্ট যোগ হয়েছে!</b>`);
 
-        try {
-            await bot.editMessageText(
-                reportText,
-                { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', ...getMainMenu() }
-            );
-        } catch (e) {}
+        await safeEditMessage(chatId, msg.message_id, reportText, getMainMenu());
     }
 
     // ৮. নির্দিষ্ট CgkI আইডি ইনপুট মোড
