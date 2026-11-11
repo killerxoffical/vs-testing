@@ -465,8 +465,8 @@ function getLoginUrl(chatId) {
         `state=${chatId}`;
 }
 
-// সার্ভার রুট চেক
-app.get('/', (req, res) => res.send('🔥 PP MOD Web OAuth Engine is Running 24/7 on Render!'));
+app.get('/version', (req, res) => res.json({ version: '3.1.0', commit: '96f2d30' }));
+app.get('/', (req, res) => res.send('🔥 PP MOD Web OAuth Engine is Running 24/7 on Render! (v3.1.0)'));
 
 // গুগল রিডাইরেক্ট রাউট
 app.get('/auth/google', (req, res) => {
