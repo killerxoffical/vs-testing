@@ -2,17 +2,17 @@ import telebot
 from telebot import types
 import requests
 
-# আপনার দেওয়া বটের আসল টোকেন সরাসরি বসিয়ে দেওয়া হয়েছে
+# আপনার দেওয়া বটের আসল টোকেন
 BOT_TOKEN = "8653938577:AAE1g-TDAedxbpGvszb0zRyVa04560mba0c"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ইউজার সেশন মেমোরি
+# ইউজার সেশন
 user_tokens = {}
 
-print("🔥 PP MOD Auto Quest Unlocker চালু হয়েছে... Telegram-এ টেস্ট করুন!")
+print("🔥 PP MOD Auto Quest Unlocker চালু হয়েছে... Telegram-এ যান!")
 
-# প্রধান বাটন মেনু
+# বাটন তৈরির ফাংশন
 def get_ppmod_buttons():
     markup = types.InlineKeyboardMarkup(row_width=1)
     
@@ -40,7 +40,7 @@ def send_welcome(message):
     )
     bot.send_message(message.chat.id, welcome_text, reply_markup=start_markup, parse_mode="Markdown")
 
-# ২. টোকেন রিসিভ ও বাটন পাঠানো
+# ২. টোকেন গ্রহণ ও বাটন পাঠানো
 @bot.message_handler(func=lambda message: True)
 def handle_token(message):
     token = message.text.strip()
@@ -52,15 +52,12 @@ def handle_token(message):
     
     status_msg = bot.send_message(user_id, "⏳ গুগলের সার্ভার ভেরিফাই করা হচ্ছে...")
     
-    # টোকেন ভ্যালিডিটি চেক
     check_url = f"https://oauth2.googleapis.com/tokeninfo?access_token={token}"
     res = requests.get(check_url)
     
     if res.status_code == 200:
         data = res.json()
         expires_in = int(data.get("expires_in", 0)) // 60
-        
-        # ইউজারের টোকেন সেভ রাখা
         user_tokens[user_id] = token
         
         try:
@@ -150,4 +147,4 @@ def handle_clicks(call):
         bot.answer_callback_query(call.id, "লগআউট সফল!")
         bot.send_message(user_id, "👋 **PP MOD:** আপনি সফলভাবে লগআউট হয়েছেন। নতুন টোকেন পাঠান।")
 
-bot.infinity_polling()
+bot.infinity_polling(skip_pending=True)
