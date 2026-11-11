@@ -1,8 +1,9 @@
 import requests
 import time
 import sys
+import json
 
-VERSION = "v3.1.0 [LIVE-DEMO-TEST]"
+VERSION = "v3.2.0 [PROFILE-VERIFIER]"
 
 # কালার কোডস
 G = '\033[92m'  # Green
@@ -15,53 +16,68 @@ BOLD = '\033[1m'
 
 print(f"""{C}{BOLD}
 ╔═══════════════════════════════════════════════════╗
-║       ⚡ GPGS LIVE DEMO VERIFICATION ⚡          ║
+║     ⚡ GOOGLE PLAY GAMES ACCOUNT VERIFIER ⚡     ║
 ║            Version: {M}{VERSION}{C}          ║
 ╚═══════════════════════════════════════════════════╝{W}""")
 
-print(f"{Y}[?] ব্রাউজার থেকে পাওয়া আসল ya29... টোকেনটি পেস্ট করুন:{W}")
+print(f"{Y}[?] আপনার একদম টাটকা/নতুন ya29... টোকেনটি দিন:{W}")
 token = input(f"{BOLD}{C}Token > {W}").strip()
 
 if not token or not token.startswith("ya29."):
-    print(f"\n{R}[✗] টোকেন সঠিক নয়! টোকেনটি 'ya29.' দিয়ে শুরু হতে হবে।{W}")
+    print(f"\n{R}[✗] অবৈধ টোকেন! টোকেনটি অবশ্যই 'ya29.' দিয়ে শুরু হতে হবে।{W}")
     sys.exit()
-
-# ডেমো টেস্টের জন্য ওপেন অ্যাচিভমেন্ট
-achievements = [
-    {"name": "Level Up Demo 1", "id": "CgkIoqf0_p0EEAIQAQ"},
-    {"name": "Level Up Demo 2", "id": "CgkIoqf0_p0EEAIQAg"},
-    {"name": "Level Up Demo 3", "id": "CgkIoqf0_p0EEAIQAw"}
-]
 
 headers = {
     "Authorization": f"Bearer {token}",
     "Content-Type": "application/json"
 }
 
-print(f"\n{M}[*] গুগলের সাথে ভেরিফাই করা হচ্ছে এবং আনলক করা হচ্ছে...{W}\n")
+print(f"\n{M}[*] গুগল সার্ভার থেকে প্রোফাইল ডাটা আনা হচ্ছে...{W}\n")
 time.sleep(1)
 
-unlocked = 0
+# ১. সরাসরি ইউজারের গুগল প্লে গেমস প্রোফাইল ডাটা আনা
+profile_url = "https://games.googleapis.com/games/v1/players/me"
+res = requests.get(profile_url, headers=headers)
 
-for ach in achievements:
-    url = f"https://games.googleapis.com/games/v1/achievements/{ach['id']}/unlock"
-    res = requests.post(url, headers=headers)
-    
-    if res.status_code == 200:
-        data = res.json()
-        print(f"{G}[✓] STATUS 200 OK:{W} {ach['name']} ➔ {G}+XP Added Successfully!{W}")
-        unlocked += 1
-    else:
-        print(f"{R}[✗] FAILED:{W} {ach['name']} | Status: {res.status_code}")
-        try:
-            print(f"{Y}   └─ Reason: {res.json().get('error', {}).get('message')}{W}")
-        except:
-            print(f"   └─ {res.text}")
-    time.sleep(0.5)
+if res.status_code == 401:
+    print(f"{R}{BOLD}[✗] টোকেনের মেয়াদ শেষ (Expired) অথবা ভুল টোকেন! (Status: 401){W}")
+    print(f"{Y}[i] অনুগ্রহ করে নতুন করে লগইন করে একদম টাটকা টোকেন কপি করুন।{W}\n")
+    sys.exit()
+elif res.status_code != 200:
+    print(f"{R}[✗] অ্যাকাউন্ট কানেক্ট হয়নি! Error: {res.status_code}{W}")
+    print(res.text)
+    sys.exit()
 
-print(f"\n{C}════════════════════════════════════════════════════{W}")
-if unlocked > 0:
-    print(f"{G}{BOLD}🎉 ডেমো সফল হয়েছে! আপনার Google Play Games অ্যাপে রিফ্রেশ করে দেখুন XP বেড়ে গেছে!{W}")
+profile = res.json()
+name = profile.get("displayName", "Unknown")
+player_id = profile.get("playerId", "Unknown")
+exp_info = profile.get("experienceInfo", {})
+current_level = exp_info.get("currentLevel", {}).get("level", "N/A")
+current_xp = exp_info.get("currentExperiencePoints", "0")
+
+# সুন্দর করে স্ক্রিনে প্রোফাইল প্রিন্ট করা
+print(f"""{G}{BOLD}
+╔════════════════ [ ACCOUNT LOGGED IN ] ════════════════╗
+  👤 Gamer Name : {W}{name}{G}
+  🆔 Player ID   : {W}{player_id}{G}
+  🎖️ Current Level: {Y}{current_level}{G}
+  ⭐ Current XP   : {Y}{current_xp} XP{G}
+╚═══════════════════════════════════════════════════════╝{W}""")
+
+print(f"\n{C}[✓] আপনার গুগল অ্যাকাউন্ট সফলভাবে কানেক্ট হয়েছে!{W}")
+print(f"{M}[*] এবার অ্যাচিভমেন্ট আনলক করার চেষ্টা করা হচ্ছে...{W}\n")
+time.sleep(1)
+
+# ডেমো আনলক চেষ্টা
+demo_ach = "CgkIoqf0_p0EEAIQAQ"
+unlock_url = f"https://games.googleapis.com/games/v1/achievements/{demo_ach}/unlock"
+unlock_res = requests.post(unlock_url, headers=headers)
+
+if unlock_res.status_code == 200:
+    print(f"{G}{BOLD}[✓] STATUS 200 OK: অ্যাচিভমেন্ট আনলক হয়েছে এবং নতুন XP যোগ হয়েছে!{W}\n")
 else:
-    print(f"{R}[!] ডেমো ফেইল করেছে। উপরে এরর মেসেজ দেখুন।{W}")
-print(f"{C}════════════════════════════════════════════════════{W}\n")
+    print(f"{Y}[i] Unlock Status: {unlock_res.status_code}{W}")
+    try:
+        print(f"   Reason: {unlock_res.json().get('error', {}).get('message')}\n")
+    except:
+        pass
